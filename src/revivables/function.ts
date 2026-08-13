@@ -5,7 +5,7 @@ import { BoxBase } from './utils.js'
 import { recursiveBox } from './index.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import { EventChannel, type EventPort } from '../utils/event-channel.js'
-import { onTeardown } from '../utils/teardown.js'
+import { isTornDown, onTeardown } from '../utils/teardown.js'
 import { box as boxMessagePort, revive as reviveMessagePort, BoxedMessagePort } from './message-port.js'
 
 export const type = 'function' as const
@@ -82,16 +82,25 @@ export const revive = <T extends BoxedFunction, T2 extends RevivableContext>(
 
   return ((...args: Capable[]) =>
     new Promise((resolve, reject) => {
+      // Refuse BEFORE allocating anything. A dead connection can never answer, and the boxing below would
+      // strand these args in routing state no teardown will visit again, locking any stream among them.
+      // This also keeps `onTeardown`'s immediate-run branch unreachable from inside `settle`'s initializer.
+      if (isTornDown(context)) {
+        reject(new Error('osra: connection closed'))
+        return
+      }
+
       const { port1: returnLocal, port2: returnRemote } = new EventChannel<Capable, Capable>()
       inFlightReturnPorts.add(returnLocal)
 
+      let removeTeardown: (() => void) | undefined
       const settle = () => {
         returnLocal.close()
         inFlightReturnPorts.delete(returnLocal)
-        removeTeardown()
+        removeTeardown?.()
       }
       // Connection death must reject calls - GC-drop of the proxy intentionally does not (see funcDropDoesNotRejectPending).
-      const removeTeardown = onTeardown(context, () => {
+      removeTeardown = onTeardown(context, () => {
         reject(new Error('osra: connection closed'))
         settle()
       })

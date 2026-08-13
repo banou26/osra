@@ -63,6 +63,29 @@ export const peerCloseRejectsPendingCalls = async () => {
   await expect(call).to.eventually.be.rejectedWith(/connection closed/)
 }
 
+// A call issued AFTER teardown must reject without boxing its arguments into the dead context. Boxing a
+// stream argument would lock it forever, since box() takes a reader and nothing is left to cancel it.
+//
+// THIS TEST EXISTS TO GUARD A TRAP, so do not "simplify" it away. It passed on the ORIGINAL code only by
+// accident: `settle()` reached `removeTeardown` from inside that const's own initializer, and the resulting
+// TDZ ReferenceError aborted the promise executor before the boxing below could run. Repairing that binding
+// on its own (hoist to `let`, call `removeTeardown?.()`) removes the accident and makes this test FAIL,
+// which is verified. The refusal has to be explicit, which is what the guard in revive() now makes it.
+export const callAfterTeardownRejectsWithoutLockingItsArguments = async () => {
+  const { port1, port2 } = new MessageChannel()
+  const value = { take: async (_stream: ReadableStream) => 'ok' }
+  expose(value, { transport: port1 })
+
+  const controller = new AbortController()
+  const remote = await expose<typeof value>({}, { transport: port2, unregisterSignal: controller.signal })
+  controller.abort()
+  await new Promise(resolve => setTimeout(resolve, 50))
+
+  const argument = new ReadableStream()
+  await expect(remote.take(argument)).to.eventually.be.rejectedWith(/connection closed/)
+  expect(argument.locked, 'a refused call must not consume its arguments').to.equal(false)
+}
+
 export const malformedInitRejects = async () => {
   const { port1, port2 } = new MessageChannel()
   port2.start()

@@ -7,7 +7,7 @@ import type {
 } from '../utils/capable-check.js'
 
 import { BoxBase } from './utils.js'
-import { onTeardown } from '../utils/teardown.js'
+import { isTornDown, onTeardown } from '../utils/teardown.js'
 import {
   createRevivableChannel,
   revive as reviveMessagePort,
@@ -84,12 +84,20 @@ export const revive = <T extends BoxedPromise, T2 extends RevivableContext>(
   // transferred MessagePorts keep working past protocol teardown, so those must stay pending rather than reject
   const wireRouted = 'portId' in value.port
   return new Promise<T[UnderlyingType]>((resolve, reject) => {
+    let removeTeardown: (() => void) | undefined
     const settle = () => {
       port.close()
       inFlightPromisePorts.delete(port)
-      removeTeardown()
+      removeTeardown?.()
     }
-    const removeTeardown = !wireRouted ? () => {} : onTeardown(context, () => {
+    // Same refuse-before-registering rule as function.revive: onTeardown runs its callback immediately on a
+    // dead scope, which would otherwise reach `removeTeardown` from inside its own initializer
+    if (wireRouted && isTornDown(context)) {
+      reject(new Error('osra: connection closed'))
+      settle()
+      return
+    }
+    removeTeardown = !wireRouted ? undefined : onTeardown(context, () => {
       reject(new Error('osra: connection closed'))
       settle()
     })

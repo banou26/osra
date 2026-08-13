@@ -63,6 +63,33 @@ export const peerCloseRejectsPendingCalls = async () => {
   await expect(call).to.eventually.be.rejectedWith(/connection closed/)
 }
 
+/** Collects anything that escapes to the page while `run` is in flight.
+ *
+ *  Load-bearing: the callee's handler is a DETACHED async IIFE (function.ts box()), so a throw inside it
+ *  reaches no caller and no assertion. Without this hook a test can claim "and it must not throw on the way
+ *  out" while being physically unable to observe a throw, which is exactly how the plain-result test below
+ *  was vacuous on its first pass. */
+const withoutEscapingErrors = async (run: () => Promise<void>): Promise<unknown[]> => {
+  const escaped: unknown[] = []
+  const onError = (event: ErrorEvent) => escaped.push(event.error ?? event.message)
+  const onRejection = (event: PromiseRejectionEvent) => escaped.push(event.reason)
+  globalThis.addEventListener('error', onError)
+  globalThis.addEventListener('unhandledrejection', onRejection)
+  try {
+    await run()
+  } finally {
+    globalThis.removeEventListener('error', onError)
+    globalThis.removeEventListener('unhandledrejection', onRejection)
+  }
+  return escaped
+}
+
+const expectNothingEscaped = (escaped: unknown[]) =>
+  expect(
+    escaped,
+    `nothing may escape the detached handler, got: ${escaped.map(error => String((error as Error)?.message ?? error)).join(' | ')}`,
+  ).to.have.length(0)
+
 // Teardown used to be one-sided: the caller rejected while the callee's detached handler ran on, boxed its
 // result into the dead context, and left a returned stream LOCKED by box()'s own getReader() and never
 // cancelled. Measured before the fix as locked=true / cancelled=false.
@@ -97,24 +124,66 @@ export const teardownReleasesAnUndeliverableStream = async () => {
   expect(cancelled, 'and must be cancelled so whatever feeds it is released').to.equal(true)
 }
 
-// A plain result needs no disposal, but it must not throw on the way out either
-export const teardownDropsAnUndeliverablePlainResult = async () => {
+// Drives the same teardown-mid-handler shape and returns whatever escaped to the page
+const undeliverable = async <T>(resolve_: () => Promise<T>): Promise<unknown[]> => {
   const { port1, port2 } = new MessageChannel()
   const exposerController = new AbortController()
-  const value = {
-    slow: async () => {
-      await new Promise(resolve => setTimeout(resolve, 60))
-      return { some: 'value' }
-    },
-  }
+  const value = { slow: async () => resolve_() }
   expose(value, { transport: port1, unregisterSignal: exposerController.signal })
-
   const remote = await expose<typeof value>({}, { transport: port2 })
-  const call = remote.slow()
-  await new Promise(resolve => setTimeout(resolve, 20))
-  exposerController.abort()
-  await expect(call).to.eventually.be.rejectedWith(/connection closed/)
-  await new Promise(resolve => setTimeout(resolve, 100))
+
+  return withoutEscapingErrors(async () => {
+    const call = remote.slow()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    exposerController.abort()
+    await expect(call).to.eventually.be.rejectedWith(/connection closed/)
+    await new Promise(resolve => setTimeout(resolve, 150))
+  })
+}
+
+const afterDelay = async <T>(make: () => T): Promise<T> => {
+  await new Promise(resolve => setTimeout(resolve, 60))
+  return make()
+}
+
+// A plain result needs no disposal. The escape hook is what gives this test teeth: without it the assertion
+// was unobservable, and it passed even with the whole box() guard deleted.
+export const teardownDropsAnUndeliverablePlainResult = async () => {
+  expectNothingEscaped(await undeliverable(() => afterDelay(() => ({ some: 'value' }))))
+}
+
+// The `message.type === 'throw'` arm of the guard: a callee that rejects after teardown still resolves to a
+// connection-closed rejection for the caller, and must not surface its own error to the page.
+export const teardownDropsAnUndeliverableCalleeThrow = async () => {
+  expectNothingEscaped(await undeliverable(() => afterDelay(() => { throw new Error('callee blew up') })))
+}
+
+export const teardownReleasesAnUndeliverableWritableStream = async () => {
+  let produced: WritableStream | undefined
+  let aborted = false
+  const escaped = await undeliverable(() => afterDelay(() => {
+    produced = new WritableStream({ abort: () => { aborted = true } })
+    return produced
+  }))
+  expectNothingEscaped(escaped)
+  expect(produced, 'the handler still ran to completion').to.not.equal(undefined)
+  expect(produced!.locked, 'an undeliverable writable must not be left locked').to.equal(false)
+  expect(aborted, 'and must be aborted so its sink is released').to.equal(true)
+}
+
+// osra must only release what it would otherwise have taken. A stream the callee already holds a reader on
+// is the callee's to finish with, so the guard's `!value.locked` arm has to leave it completely alone.
+export const teardownLeavesAnAlreadyLockedResultAlone = async () => {
+  let produced: ReadableStream<Uint8Array> | undefined
+  let cancelled = false
+  const escaped = await undeliverable(() => afterDelay(() => {
+    produced = new ReadableStream<Uint8Array>({ cancel: () => { cancelled = true } })
+    produced.getReader()
+    return produced
+  }))
+  expectNothingEscaped(escaped)
+  expect(produced!.locked, "the callee's own reader still holds it").to.equal(true)
+  expect(cancelled, 'osra must not cancel a stream it never took').to.equal(false)
 }
 
 // A call issued AFTER teardown must reject without boxing its arguments into the dead context. Boxing a

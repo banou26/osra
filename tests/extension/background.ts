@@ -108,6 +108,13 @@ const resolvers = {
 export type Resolvers = typeof resolvers
 
 chrome.runtime.onConnect.addListener(async (port) => {
+  // Its own branch on purpose: the `content-` arm overwrites the shared `contentApi` every other test reads
+  if (port.name.startsWith('disconnect-probe-')) {
+    expose<ContentScriptResolvers>(resolvers, {
+      transport: { isJson: true, emit: port, receive: port }
+    })
+    return
+  }
   if (port.name.startsWith('content-')) {
     connectedTabId = port.sender?.tab?.id ?? null
     contentApi = await expose<ContentScriptResolvers>(resolvers, {

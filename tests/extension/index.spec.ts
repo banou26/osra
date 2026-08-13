@@ -12,6 +12,13 @@ type TestObject = {
   [key: string]: TestObject | (() => any)
 }
 
+const GROUP_TITLES = {
+  Content: 'Content',
+  RuntimeContent: 'Runtime Transport Content',
+  PortDisconnect: 'Port Disconnect',
+} as const
+const GROUPS = Object.keys(GROUP_TITLES)
+
 let context: BrowserContext
 let extensionId: string
 let cdp: CDPSession
@@ -54,7 +61,7 @@ test.beforeAll(async () => {
   await new Promise<void>(async (resolve) => {
     while (true) {
       const { result } = await cdp.send('Runtime.evaluate', {
-        expression: 'globalThis.tests?.Content !== undefined && globalThis.tests?.RuntimeContent !== undefined',
+        expression: GROUPS.map(group => `globalThis.tests?.${group} !== undefined`).join(' && '),
         contextId
       })
       if (result.value) {
@@ -70,13 +77,13 @@ test.afterAll(async () => {
   await context?.close()
 })
 
-test.describe('Content', () => {
-  const contentTests = tests.Content as TestObject
-  for (const [key, value] of Object.entries(contentTests)) {
-    if (typeof value === 'function' && !key.startsWith('set')) {
+for (const [group, title] of Object.entries(GROUP_TITLES)) {
+  test.describe(title, () => {
+    for (const [key, value] of Object.entries(tests[group] as TestObject)) {
+      if (typeof value !== 'function' || key.startsWith('set')) continue
       test(key, async () => {
-        const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', {
-          expression: `globalThis.tests.Content.${key}()`,
+        const { exceptionDetails } = await cdp.send('Runtime.evaluate', {
+          expression: `globalThis.tests.${group}.${key}()`,
           contextId,
           awaitPromise: true
         })
@@ -85,23 +92,5 @@ test.describe('Content', () => {
         }
       })
     }
-  }
-})
-
-test.describe('Runtime Transport Content', () => {
-  const runtimeTests = tests.RuntimeContent as TestObject
-  for (const [key, value] of Object.entries(runtimeTests)) {
-    if (typeof value === 'function' && !key.startsWith('set')) {
-      test(key, async () => {
-        const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', {
-          expression: `globalThis.tests.RuntimeContent.${key}()`,
-          contextId,
-          awaitPromise: true
-        })
-        if (exceptionDetails) {
-          throw new Error(exceptionDetails.exception?.description || 'Test failed')
-        }
-      })
-    }
-  }
-})
+  })
+}

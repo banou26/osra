@@ -3,6 +3,9 @@ import { Resolvers as BackgroundResolvers } from './background'
 import { expose } from '../../src/index'
 import * as contentTests from './content-tests'
 import { setApi, setBgInitiatedApi } from './content-tests'
+import * as runtimeContentTests from './runtime-content-tests'
+import { setApi as setRuntimeApi } from './runtime-content-tests'
+import * as portDisconnectTests from './port-disconnect-tests'
 
 const resolvers = {
   getContentInfo: async () => ({ location: window.location.href, timestamp: Date.now() }),
@@ -16,25 +19,6 @@ const resolvers = {
 
 export type Resolvers = typeof resolvers
 
-const port = chrome.runtime.connect({ name: `content-${Date.now()}` })
-const api = await expose<BackgroundResolvers>(resolvers, {
-  transport: { isJson: true, emit: port, receive: port }
-})
-
-setApi(api)
-
-chrome.runtime.onConnect.addListener(async (port) => {
-  if (port.name.startsWith('bg-to-content-')) {
-    const bgInitiatedApi = await expose<BackgroundResolvers>(resolvers, {
-      transport: { isJson: true, emit: port, receive: port }
-    })
-    setBgInitiatedApi(bgInitiatedApi)
-  }
-})
-
-import * as runtimeContentTests from './runtime-content-tests'
-import { setApi as setRuntimeApi } from './runtime-content-tests'
-
 const runtimeTransport = {
   isJson: true,
   emit: (message: any) => chrome.runtime.sendMessage(message),
@@ -45,10 +29,29 @@ const runtimeTransport = {
   }
 }
 
-const runtimeApi = await expose<BackgroundResolvers>(resolvers, {
-  transport: runtimeTransport
-})
+// MUST NOT be top-level await: a manifest content script is loaded as a CLASSIC script, where that is a
+// syntax error, so the whole file silently fails to parse and `globalThis.tests` never appears - which
+// reads as the harness hanging in beforeAll rather than as a broken build
+const main = async () => {
+  const port = chrome.runtime.connect({ name: `content-${Date.now()}` })
+  setApi(await expose<BackgroundResolvers>(resolvers, {
+    transport: { isJson: true, emit: port, receive: port }
+  }))
 
-setRuntimeApi(runtimeApi)
+  chrome.runtime.onConnect.addListener(async (port) => {
+    if (port.name.startsWith('bg-to-content-')) {
+      setBgInitiatedApi(await expose<BackgroundResolvers>(resolvers, {
+        transport: { isJson: true, emit: port, receive: port }
+      }))
+    }
+  })
 
-globalThis.tests = { Content: contentTests, RuntimeContent: runtimeContentTests }
+  setRuntimeApi(await expose<BackgroundResolvers>(resolvers, {
+    transport: runtimeTransport
+  }))
+
+  // last, so its presence means the apis behind it are ready - the spec polls on exactly this
+  globalThis.tests = { Content: contentTests, RuntimeContent: runtimeContentTests, PortDisconnect: portDisconnectTests }
+}
+
+main()

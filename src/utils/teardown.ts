@@ -17,6 +17,11 @@ export const onTeardown = (scope: WeakKey, fn: () => void): (() => void) => {
   return () => set.delete(fn)
 }
 
+/** Whether a scope's teardown has already run. Callers use this to REFUSE work rather than start it:
+ *  `onTeardown` against a dead scope runs the callback immediately, which is a footgun inside an
+ *  initializer, and anything registered afterwards is state no teardown will ever visit again. */
+export const isTornDown = (scope: WeakKey): boolean => tornDown.has(scope)
+
 export const runTeardown = (scope: WeakKey): void => {
   if (tornDown.has(scope)) return
   tornDown.add(scope)

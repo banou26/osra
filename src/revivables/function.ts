@@ -19,6 +19,16 @@ type CallContext = [EventPort<Capable>, Capable[]]
 // Pins return-value ports between call-site return and result arrival - the cycle has no other anchor.
 const inFlightReturnPorts = new Set<EventPort<Capable>>()
 
+/** Releases a result the peer can never receive. Top level and best effort ON PURPOSE: walking into the
+ *  value is what boxing does, and boxing into a dead context is the thing the caller is avoiding. */
+const disposeUndelivered = (value: unknown): void => {
+  if (value instanceof ReadableStream) {
+    if (!value.locked) value.cancel(new Error('osra: connection closed')).catch(() => {})
+  } else if (typeof WritableStream !== 'undefined' && value instanceof WritableStream) {
+    if (!value.locked) value.abort(new Error('osra: connection closed')).catch(() => {})
+  }
+}
+
 export type BoxedFunction<T extends (...args: any[]) => any = (...args: any[]) => any> =
   & BoxBaseType<typeof type>
   & { port: BoxedMessagePort<CallContext> }
@@ -50,6 +60,15 @@ export const box = <T extends (...args: any[]) => any, T2 extends RevivableConte
         message = { type: 'return', value: resolved as Capable }
       } catch (error) {
         message = { type: 'throw', error: error as Capable }
+      }
+      // The handler runs detached, so the connection can die while it is still awaiting. Boxing after that
+      // builds routing state in a context whose teardown has already run and can never run again: measured,
+      // a returned ReadableStream came back LOCKED by box()'s own getReader() and was never cancelled, so
+      // whatever fed it was stranded. Nothing can reach the peer now, so release instead of boxing.
+      if (isTornDown(context)) {
+        if (message.type === 'return') disposeUndelivered(message.value)
+        try { returnPort.close() } catch { /* may already be closed */ }
+        return
       }
       const boxedResult = (() => {
         try {

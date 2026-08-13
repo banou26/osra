@@ -63,6 +63,60 @@ export const peerCloseRejectsPendingCalls = async () => {
   await expect(call).to.eventually.be.rejectedWith(/connection closed/)
 }
 
+// Teardown used to be one-sided: the caller rejected while the callee's detached handler ran on, boxed its
+// result into the dead context, and left a returned stream LOCKED by box()'s own getReader() and never
+// cancelled. Measured before the fix as locked=true / cancelled=false.
+export const teardownReleasesAnUndeliverableStream = async () => {
+  const { port1, port2 } = new MessageChannel()
+  const exposerController = new AbortController()
+
+  let produced: ReadableStream<Uint8Array> | undefined
+  let cancelled = false
+  const value = {
+    slowStream: async () => {
+      await new Promise(resolve => setTimeout(resolve, 60))
+      produced = new ReadableStream<Uint8Array>({
+        start: (controller) => controller.enqueue(new Uint8Array([1, 2, 3])),
+        cancel: () => { cancelled = true },
+      })
+      return produced
+    },
+  }
+  expose(value, { transport: port1, unregisterSignal: exposerController.signal })
+
+  const remote = await expose<typeof value>({}, { transport: port2 })
+  const call = remote.slowStream()
+  call.catch(() => {})
+  await new Promise(resolve => setTimeout(resolve, 20))
+  exposerController.abort()
+  await expect(call).to.eventually.be.rejectedWith(/connection closed/)
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  expect(produced, 'the handler still ran to completion').to.not.equal(undefined)
+  expect(produced!.locked, 'an undeliverable stream must not be left locked').to.equal(false)
+  expect(cancelled, 'and must be cancelled so whatever feeds it is released').to.equal(true)
+}
+
+// A plain result needs no disposal, but it must not throw on the way out either
+export const teardownDropsAnUndeliverablePlainResult = async () => {
+  const { port1, port2 } = new MessageChannel()
+  const exposerController = new AbortController()
+  const value = {
+    slow: async () => {
+      await new Promise(resolve => setTimeout(resolve, 60))
+      return { some: 'value' }
+    },
+  }
+  expose(value, { transport: port1, unregisterSignal: exposerController.signal })
+
+  const remote = await expose<typeof value>({}, { transport: port2 })
+  const call = remote.slow()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  exposerController.abort()
+  await expect(call).to.eventually.be.rejectedWith(/connection closed/)
+  await new Promise(resolve => setTimeout(resolve, 100))
+}
+
 // A call issued AFTER teardown must reject without boxing its arguments into the dead context. Boxing a
 // stream argument would lock it forever, since box() takes a reader and nothing is left to cancel it.
 //

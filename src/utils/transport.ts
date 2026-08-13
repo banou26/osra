@@ -207,6 +207,16 @@ export const registerOsraMessageListener = (
   )
 }
 
+// A WebExtension port THROWS on postMessage once it is disconnected, where a MessagePort silently no-ops
+// (measured: neither engine throws or logs for a MessagePort, in any disentanglement route). Firefox says
+// "Attempt to postMessage on disconnected port", Chromium "Attempting to use a disconnected port object".
+// Every message on a port transport funnels through here, so a revivable still talking while the other end
+// tears down - a stream topping up its credit window - throws on every message, not once.
+const disconnectedPorts = new WeakSet<WebExtPort>()
+
+const isDisconnectedPortError = (error: unknown): boolean =>
+  String((error as { message?: unknown })?.message ?? error).includes('disconnected port')
+
 export const sendOsraMessage = (
   transport: EmitTransport,
   message: Message,
@@ -222,7 +232,14 @@ export const sendOsraMessage = (
     // Must check first - cross-origin windows throw on other property access
     emitTransport.postMessage(message, origin, transferables)
   } else if (isWebExtensionPort(emitTransport)) {
-    emitTransport.postMessage(message)
+    // A disconnected port is ordinary teardown, not a fault; anything else here is a real bug and must stay visible
+    if (disconnectedPorts.has(emitTransport)) return
+    try {
+      emitTransport.postMessage(message)
+    } catch (error) {
+      if (!isDisconnectedPortError(error)) throw error
+      disconnectedPorts.add(emitTransport)
+    }
   } else if (isWebExtensionRuntime(emitTransport)) {
     // Rejects while no receiver exists yet (announce retries) - swallow only that
     emitTransport.sendMessage(message)?.catch?.((error: unknown) => {

@@ -5,8 +5,7 @@ export default defineConfig({
   site: 'https://osra.banou.dev',
   // the static build emits a meta-refresh page for local preview, while public/_redirects gives production a real 302 on Cloudflare Pages
   redirects: {
-    '/': '/general/getting-started/',
-    '/start/getting-started/': '/general/getting-started/',
+    '/': '/general/getting-started'
   },
   integrations: [
     starlight({
@@ -27,11 +26,14 @@ export default defineConfig({
           label: 'General',
           items: [
             { label: 'Getting started', slug: 'general/getting-started' },
+            { label: 'Overview', slug: 'general/overview' },
+            { label: 'Installation', slug: 'general/installation' },
           ],
         },
         {
           label: 'Guides',
           items: [
+            { label: 'Transport modes', slug: 'guides/transport-modes' },
             { label: 'Transports', slug: 'guides/transports' },
             { label: 'Custom transports', slug: 'guides/custom-transports' },
             { label: 'Supported types', slug: 'guides/supported-types' },

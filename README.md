@@ -6,6 +6,8 @@
 
 Strictly typed, ergonomic, and lightweight (13kb gzipped) RPC library in Typescript. Send complex types and call functions across contexts with inferred typing, pluggable transports.
 
+TL;DR: Osra makes your multi-context code looks like normal code. Zero boilerplate and gives you the best error messages you've ever seen.
+
 `worker.ts`
 ```typescript
 import { expose } from 'osra'

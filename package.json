@@ -59,17 +59,15 @@
     "docs-preview": "npm run preview -w docs",
     "docs-check-twoslash": "npm run check-twoslash -w docs"
   },
-  "dependencies": {
-    "@types/webextension-polyfill": "^0.12.4"
-  },
   "devDependencies": {
     "@istanbuljs/nyc-config-typescript": "^1.0.2",
     "@playwright/test": "1.58.2",
     "@types/chai": "^5.2.3",
     "@types/chai-as-promised": "^8.0.2",
-    "@types/chrome": "^0.1.27",
+    "@types/chrome": "^0.1.43",
     "@types/firefox-webext-browser": "^143.0.0",
     "@types/node": "^25.0.2",
+    "@types/webextension-polyfill": "^0.12.5",
     "chai": "^5.3.3",
     "chai-as-promised": "^8.0.1",
     "concurrently": "^9.1.0",

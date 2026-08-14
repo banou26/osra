@@ -17,6 +17,7 @@
     "sharp": "^0.35.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "expressive-code-twoslash": "^0.6.1",
     "twoslash": "^0.3.9",
     "typescript": "^5.9.3"

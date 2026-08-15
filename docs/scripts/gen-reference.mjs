@@ -11,6 +11,7 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve, relative } from 'node:path'
 import { readdirSync, readFileSync, writeFileSync, statSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { Application, ReflectionKind, TSConfigReader } from 'typedoc'
 import GithubSlugger from 'github-slugger'
 import { cleanText, identOf } from './clean-text.mjs'
@@ -61,6 +62,23 @@ const KIND_LABEL = {
 }
 
 const log = (...a) => console.log('[gen-reference]', ...a)
+
+// Typedoc pins every "Defined in:" link to the HEAD sha, which is what makes them permalinks that
+// never rot. The cost is that they 404 until that commit is on GitHub. A Cloudflare build always
+// checks out a pushed commit so its links are valid by construction, but a local build on unpushed
+// work emits hundreds of dead links with nothing to say so. Say so.
+const headIsPushed = () => {
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' }).trim()
+    // any remote-tracking branch containing HEAD means the sha is fetchable on the remote
+    if (git('branch', '-r', '--contains', 'HEAD')) return true
+    return { head: git('rev-parse', '--short', 'HEAD'), ahead: git('rev-list', '--count', '@{u}..HEAD') }
+  } catch {
+    // no git, no upstream, or a detached checkout with no remote refs: nothing useful to report,
+    // and typedoc degrades to plain text when it cannot resolve a repository at all
+    return true
+  }
+}
 
 const app = await Application.bootstrapWithPlugins(
   {
@@ -300,5 +318,16 @@ for (const file of [OUT_MAP, OUT_SIDEBAR]) {
 }
 log(`${symbols.length} symbols, ${Object.keys(aliases).length} link aliases, ${totalBytes} bytes of markdown`)
 if (dropped.length) log('ambiguous names left unlinked:', dropped.join(', '))
+
+const pushed = headIsPushed()
+if (pushed !== true) {
+  const links = walk(OUT_DOCS).reduce(
+    (n, f) => n + (readFileSync(f, 'utf8').match(/github\.com\/[^)]*\/blob\//g)?.length ?? 0),
+    0,
+  )
+  log(`WARNING: HEAD (${pushed.head}) is ${pushed.ahead} commit(s) ahead of its upstream, so all`)
+  log(`         ${links} "Defined in:" source links will 404 on GitHub until you push.`)
+  log('         Nothing to fix in the output: they resolve the moment the commit lands.')
+}
 if (sawPrettierSkip) throw new Error('prettier is not installed, type fences would ship unformatted')
 log('done.')

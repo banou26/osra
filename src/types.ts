@@ -23,7 +23,9 @@ export type Jsonable =
 
 export type Structurable =
   | Jsonable
-  /** not really structureable but here for convenience */
+  // not really structureable but here for convenience.
+  // A `/** */` here would be a doc comment on the union MEMBER, which makes typedoc render the
+  // whole union as a 20 entry "Union Members" wall on the generated reference page.
   | void
   | undefined
   | bigint

@@ -114,6 +114,6 @@ Four options decide who your side talks to, and they compose:
 | `remoteName` | Which peer label you accept. |
 | `remoteUuid` | Which exact instance you accept. |
 
-`origin` is the one that matters across documents, since it is enforced by the browser rather than by osra. Set it whenever the two sides are on different origins. See [transports](/guides/transports/#window-and-iframe) for how it applies, including the one announce message that has to go out with `'*'`.
+`origin` is the one that matters across documents, since it is enforced by the browser rather than by osra. Set it whenever the two sides are on different origins. See [transports](/guides/transports/#iframe) for how it applies, including the one announce message that has to go out with `'*'`.
 
 The rest are routing labels. They keep independent connections from colliding, and they keep the wrong peer's traffic out of your handlers, but they are values on the wire that any peer on the channel can set. If a channel is reachable by code you do not control, scope it with `origin`, or do not put it on a shared channel at all.

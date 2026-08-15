@@ -1,3 +1,9 @@
 node_modules/
 dist/
 .astro/
+
+# generated from ../src by scripts/gen-reference.mjs, which the predev/prebuild hooks run.
+# Not committed: docs/ and src/ are the same repo, so the reference is always regenerated from the
+# source being built and cannot go stale. The glob leaves the hand-written src/lib/*.mjs tracked.
+src/content/docs/api/
+src/lib/*.generated.mjs

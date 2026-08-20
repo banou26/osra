@@ -3,7 +3,10 @@ title: Transports
 description: Every channel osra runs over, from workers and iframes to WebSockets and web extensions.
 ---
 
-The following table contains osra's supported transports:
+Transports are the channels osra uses to communicate between the different `expose()` calls.
+As previously explained in [Transport Modes](/guides/transport-modes/), transports support different modes of communication depending on which you use.
+
+The following table contains osra's natively supported transports, with their corresponding mode and notes related to them:
 
 | Transport | Mode | Notes |
 |---|---|---|
@@ -15,6 +18,11 @@ The following table contains osra's supported transports:
 | [`WebSocket`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) | JSON | |
 | WebExtension [`Port`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/Port) | JSON | |
 | `{ emit, receive }` | either | See [custom transports](/guides/custom-transports/) |
+
+
+#### Examples
+
+The following examples demonstrate how osra can be used with each transport.
 
 ## Worker
 

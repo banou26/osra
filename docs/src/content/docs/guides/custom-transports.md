@@ -3,17 +3,28 @@ title: Custom transports
 description: Wrap any channel in an { emit, receive } pair and run osra over it.
 ---
 
-When osra does not know your channel, describe it with a plain object:
+If osra's default does not fit your needs, osra support custom transports.
+The custom transport interface is simplified as such in the `expose(value, options)`'s `options.transport` parameter.
 
 ```ts
+
+
 type CustomTransport = {
-  emit: (message, transferables?) => void
-  receive: (listener) => void | (() => void)
+  emit?: (message: Message, transferables?: Transferable[]) => void
+  receive?: (listener: (event: Message, messageContext: MessageContext) => void) => void
   isJson?: boolean
 }
 ```
 
-Both halves can be a function, or a platform transport osra already knows. That is what makes `{ emit: iframe.contentWindow, receive: window }` work: two platform objects, one for each direction.
+In truth though, the emit and receive functions allows a wider range of type such as any of the [platform transports](/guides/transports/) allowed values
+
+## isJson
+
+`isJson` tells osra whether your channel can carry structured-clone values.
+
+Leave it out and osra guesses by looking at what you passed. A `{ emit: someWebSocket }` is JSON, a `{ emit: somePort }` is not. Set it explicitly when your channel serializes behind your back, which is the case for anything that ends up in `JSON.stringify`, a text protocol, or a native bridge.
+
+The optimistic direction is the one that fails: left unset, osra will box a `RegExp` or a `File` for a channel that cannot carry it. See [supported types](/guides/supported-types/) for what each mode allows.
 
 ## A BroadcastChannel
 
@@ -41,14 +52,6 @@ const remote = await expose<PeerApi>(localApi, {
 ```
 
 `receive` does not need to filter. osra ignores foreign messages, and drops envelopes whose `key` or `name` do not match.
-
-## isJson
-
-`isJson` tells osra whether your channel can carry structured-clone values.
-
-Leave it out and osra guesses by looking at what you passed. A `{ emit: someWebSocket }` is JSON, a `{ emit: somePort }` is not. Set it explicitly when your channel serializes behind your back, which is the case for anything that ends up in `JSON.stringify`, a text protocol, or a native bridge.
-
-The optimistic direction is the one that fails: left unset, osra will box a `RegExp` or a `File` for a channel that cannot carry it. See [supported types](/guides/supported-types/) for what each mode allows.
 
 ## Transferables
 

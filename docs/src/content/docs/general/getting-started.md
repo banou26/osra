@@ -6,7 +6,7 @@ description: Installation and quick examples of using osra.
 If you like to learn by examples, you're in the right place.\
 In case you'd rather go through a more in-depth documentation, you can start at the [overview](/general/overview).
 
-We'll go through some basic and more advanced examples when using osra in this page.
+We'll go through some basic and more advanced examples to osra in this page.
 
 ## Install
 
@@ -16,9 +16,7 @@ npm install osra
 
 ## Simple cross context communication
 
-If you have a worker(nodejs worker, web worker, doesn't matter).\
-And you'd like to call a function from your main thread.\
-Using Osra, it's as simple as calling [`expose(value, options)`](/reference/expose).
+If you have a worker(nodejs worker, web worker, doesn't matter) and you'd like to call a function from your main thread, using osra, it's as simple as calling [`expose(value, options)`](/reference/expose).
 
 ```ts twoslash title="worker.ts"
 type Payload = { mult: (a: number, b: number) => number }
@@ -51,6 +49,10 @@ await add(40, 2) // 42
 Osra natively supports almost all of the types you'd encounter on the web platform, not just functions.\
 If you'd like to see every supported types, you can head over at the [supported types](/guides/supported-types/) page.
 
+
+## Todo: add more stuff in the getting started page.
+
+<!--
 ## Transports
 
 On the web, there are two different types of values.\
@@ -59,4 +61,4 @@ The first ones are
 
 - Structured
 - JSON
-
+-->

@@ -291,3 +291,23 @@ starlight-toc nav a[aria-current='true'] {
     top: calc((var(--osra-nav-row) - var(--sl-menu-button-size)) / 2);
   }
 }
+
+
+h2 {
+  font-size: 1.9rem;
+}
+
+h3 {
+  font-size: 1.5rem;
+}
+
+/* Symbols auto-linked into prose by src/plugins/satteri-code-links.mjs. The brand colour from the
+ * `a code` rule above already marks them as links, so the underline is held back until hover: a
+ * paragraph naming four osra symbols should not read as four underlines. */
+.sl-markdown-content a.code-ref:not(:where(.not-content *)) {
+  text-decoration: none;
+}
+.sl-markdown-content a.code-ref:is(:hover, :focus-visible):not(:where(.not-content *)) {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}

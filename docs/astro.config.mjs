@@ -46,7 +46,7 @@ export default defineConfig({
           items: [
             { label: 'Transport modes', slug: 'guides/transport-modes' },
             { label: 'Transports', slug: 'guides/transports' },
-            { label: 'Custom transports', slug: 'guides/custom-transports' },
+            { label: 'Custom transports & Relays', slug: 'guides/custom-transports-and-relays' },
             { label: 'Supported types', slug: 'guides/supported-types' },
             { label: 'Live values', slug: 'guides/live-values' },
             { label: 'identity() and transfer()', slug: 'guides/identity-and-transfer' },

@@ -17,6 +17,7 @@ The following table contains osra's natively supported transports, with their co
 | [`ServiceWorker`](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorker) | structured | |
 | [`WebSocket`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) | JSON | |
 | WebExtension [`Port`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/Port) | JSON | |
+| WebExtension [`runtime.onMessage`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage) | JSON | Receive only, pair it with a `sendMessage` emit |
 | `{ emit, receive }` | either | See [custom transports](/guides/custom-transports/) |
 
 
@@ -219,7 +220,21 @@ const { mult } = await expose<Payload>(
 await mult(3, 7) // 21
 ```
 
-## Web extension
+## WebExtension
+
+Osra natively supports WebExtension transports, but there is an important
+thing to know about WebExtensions; if communicating with a MV3 service-worker,
+that service-worker might be unloaded and cause issues with the osra connection.
+
+This means that if you have long lived promises, if the SW unloads during these,
+the promise will never resolve.
+
+### MV3 service-worker connection
+
+Per the spec, service-workers are unloaded after 5 minutes of inactivity
+even if connections are open, in practice, this means that if you are
+communicating with a MV3 service-worker, you should reconnect when
+you receive a `disconnect` event.
 
 ```ts twoslash title="content-script.ts"
 import { runtime } from 'webextension-polyfill'
@@ -252,5 +267,73 @@ runtime.onConnect.addListener(async port => {
   )
   
   await mult(3, 7) // 21
+})
+```
+
+### connectionless
+
+You can also communicate to service-workers via `runtime.sendMessage`
+and `runtime.onMessage`, which makes them connectionless.
+
+With the same caveat of the connection based communication,
+if the service-worker unloads, any in-flight requests will fail
+and you need to re-`expose()` to make a new connection.
+
+```ts twoslash title="content-script.ts"
+import { runtime } from 'webextension-polyfill'
+type Payload = { add: (a: number, b: number) => number }
+// ---cut---
+import { expose } from 'osra'
+
+const { add } = await expose<Payload>(
+  { mult: (a: number, b: number) => a * b },
+  {
+    transport: {
+      isJson: true,
+      emit: message => runtime.sendMessage(message),
+      receive: runtime.onMessage
+    }
+  }
+)
+
+await add(40, 2) // 42
+```
+
+```ts twoslash title="background.ts"
+import type { Runtime } from 'webextension-polyfill'
+import { runtime, tabs } from 'webextension-polyfill'
+type Payload = { mult: (a: number, b: number) => number }
+// ---cut---
+import type { ReceiveHandler } from 'osra'
+
+import { expose, checkOsraMessageKey, OSRA_DEFAULT_KEY } from 'osra'
+
+type Listener = Parameters<ReceiveHandler>[0]
+
+const peers = new Map<number, Promise<Listener>>()
+
+const peer = (tabId: number) => {
+  const existing = peers.get(tabId)
+  if (existing) return existing
+  const { promise, resolve } = Promise.withResolvers<Listener>()
+  peers.set(tabId, promise)
+  expose<Payload>(
+    { add: (a: number, b: number) => a + b },
+    {
+      transport: {
+        isJson: true,
+        receive: listener => resolve(listener),
+        emit: message => { tabs.sendMessage(tabId, message) }
+      }
+    }
+  )
+  return promise
+}
+
+runtime.onMessage.addListener((message: unknown, sender: Runtime.MessageSender) => {
+  const tabId = sender.tab?.id
+  if (tabId === undefined) return
+  if (!checkOsraMessageKey(message, OSRA_DEFAULT_KEY)) return
+  peer(tabId).then(listener => listener(message, { sender }))
 })
 ```

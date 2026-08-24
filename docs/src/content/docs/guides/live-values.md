@@ -3,53 +3,51 @@ title: Live values
 description: How functions, promises, generators, streams and abort signals behave once they cross a connection.
 ---
 
-Data is copied. Functions, promises, generators, streams, abort signals and event targets are not: the original stays in its context, and the peer gets a proxy whose traffic routes back to it over a dedicated channel.
+In osra, every [structured cloneable](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm) value is sent as is, then we have [transferable values](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects) that are transferred to another context if both contexts can share the same memory.
 
-Which means their semantics are not quite the local ones. This page is the differences.
+Now, osra supports [many more types](/guides/supported-types/) that aren't included in those, such as `Function`, `Promise`, `ReadableStream`, ect...
+Those types are what we call "proxies", as they try to mimick the behavior of the original value.
+
+This page will cover some of the nuances of "Live values" in osra.
 
 ## Functions
 
-A function arrives as `(...args) => Promise<result>`. Everything else follows from that.
+To start off, osra do NOT support sending synchronous functions.
 
-Arguments and return values go through the same treatment as anything else, so you can pass callbacks, get functions back, and nest them as deep as you like.
+Any function of type `<T extends any[], T2>(...args: T) => T2` will be [revived](/guides/custom-revivables/) as `<T extends any[], T2>(...args: T) => Promise<T2>`.
+
+Every arguments and return values are automatically handled, as long as osra supports the type you want to use as argument or return value, it will work.\
+If not, you will get a proper compile time error.
 
 ```ts twoslash title="worker.ts"
 import { expose } from 'osra'
-
-const payload = {
-  each: (items: number[], onItem: (item: number) => void) => {
-    for (const item of items) onItem(item)
-  }
-}
-export type Payload = typeof payload
+// ---cut---
+type Callback = (item: number) => void
+const payload = (nums: number[], cb: Callback) => nums.map(cb)
 
 expose(payload, { transport: globalThis })
 ```
 
 ```ts twoslash title="main.ts"
 // @filename: worker.ts
-import { expose } from 'osra'
-const payload = {
-  each: (items: number[], onItem: (item: number) => void) => {
-    for (const item of items) onItem(item)
-  }
-}
+const payload = (nums: number[], cb: (item: number) => void) => nums.map(cb)
 export type Payload = typeof payload
-expose(payload, { transport: globalThis })
 // @filename: main.ts
 declare const worker: Worker
-// ---cut---
 import type { Payload } from './worker'
 import { expose } from 'osra'
-
-const { each } = await expose<Payload>({}, { transport: worker })
-
-await each([1, 2, 3], item => console.log(item)) // 1, 2, 3
+// ---cut---
+const each = await expose<Payload>({}, { transport: worker })
+await each(
+  [1, 2, 3],
+  num => console.log(num)
+)
+// 1, 2, 3
 ```
 
-A throw on the far side rejects your promise, with the error revived as its own class where possible. See [errors and lifecycle](/guides/lifecycle/).
+Throwing inside the function will propagate to the other context as per [Errors and Lifecycle](/guides/lifecycle/).
 
-Every call is one round trip. Cheap individually, linear in a loop. Expose a function that takes the batch rather than calling one a thousand times.
+One thing to remember is that, every function call creates a round trip. So if performance is a concern, consider batching calls and values together instead of making many function calls.
 
 ## Promises
 

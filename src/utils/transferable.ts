@@ -58,8 +58,17 @@ export const getTransferableObjects = (value: unknown): Transferable[] => {
       return
     }
 
-    // TypedArray / DataView expose every numeric index; the typed-array revivable handles the buffer.
-    if (ArrayBuffer.isView(value)) return
+    // TypedArray / DataView expose every numeric index, so never descend into them. Typed
+    // arrays are boxed (their raw buffer rides the box and is collected above); a raw
+    // DataView rides the clonable fallback, so inside a transfer box its buffer is the
+    // thing to move - the serialized view then arrives over the moved buffer.
+    if (ArrayBuffer.isView(value)) {
+      if (inTransferBox && value instanceof DataView && !isSharedArrayBuffer(value.buffer) && !seen.has(value.buffer)) {
+        seen.add(value.buffer)
+        transferables.push(value.buffer as ArrayBuffer)
+      }
+      return
+    }
 
     if (Array.isArray(value)) {
       for (const item of value) recurse(item, inTransferBox)

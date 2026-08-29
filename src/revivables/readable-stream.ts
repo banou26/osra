@@ -3,6 +3,7 @@ import type { RevivableContext, BoxBase as BoxBaseType } from './utils.js'
 import type { UnderlyingType } from './index.js'
 
 import { BoxBase } from './utils.js'
+import { isInTransfer, forceTransfer } from './transfer.js'
 import {
   createRevivableChannel,
   revive as reviveMessagePort,
@@ -45,6 +46,10 @@ export const box = <T extends ReadableStream, T2 extends RevivableContext>(
 ): BoxedReadableStream<T> => {
   const { localPort, boxedRemote } = createRevivableChannel<Msg>(context)
   const reader = value.getReader()
+  // Captured at box time: transfer(stream) marks each chunk so transferables inside it
+  // move instead of copy. Chunks that themselves carry streams re-enter the extent when
+  // they are boxed, which is what makes the marker propagate through nested streams.
+  const transferChunks = isInTransfer()
 
   let credit = 0
   let pumping = false
@@ -73,7 +78,8 @@ export const box = <T extends ReadableStream, T2 extends RevivableContext>(
         return
       }
       credit--
-      try { localPort.postMessage({ type: 'chunk', value: result.value as Capable }) }
+      const chunk = transferChunks ? forceTransfer(result.value as Capable) : result.value as Capable
+      try { localPort.postMessage({ type: 'chunk', value: chunk }) }
       catch (error) {
         finish({ type: 'error', error: error as Capable })
         reader.cancel(error).catch(() => {})
@@ -197,6 +203,10 @@ const reviveCredit = (port: AnyPort<Msg>): ReadableStream => {
           fail(data.error)
         }
       })
+      port.addEventListener('messageerror', () => {
+        if (done) return
+        fail(new Error('osra: a chunk failed to deserialize on this platform'))
+      })
       port.addEventListener('close', () => {
         if (done || ended || errored) return
         fail(new Error('osra: connection closed'))
@@ -209,14 +219,16 @@ const reviveCredit = (port: AnyPort<Msg>): ReadableStream => {
         if (!ended && !errored) topUp()
         return
       }
+      // errored before ended: a messageerror-dropped chunk followed by a clean 'end' must
+      // surface as an error, never as a silently truncated stream
+      if (errored) {
+        finishClose()
+        return Promise.reject(pendingError)
+      }
       if (ended) {
         finishClose()
         controller.close()
         return
-      }
-      if (errored) {
-        finishClose()
-        return Promise.reject(pendingError)
       }
       topUp()
       return new Promise<void>((resolve, reject) => { waiter = { controller, resolve, reject } })
@@ -238,6 +250,12 @@ const revivePull = (port: AnyPort<Msg>): ReadableStream => {
   let done = false
   return new ReadableStream({
     start: (controller) => {
+      port.addEventListener('messageerror', () => {
+        if (done) return
+        done = true
+        try { controller.error(new Error('osra: a chunk failed to deserialize on this platform')) } catch {}
+        queueMicrotask(() => port.close())
+      })
       port.addEventListener('close', () => {
         if (done) return
         done = true

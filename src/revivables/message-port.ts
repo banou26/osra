@@ -8,6 +8,7 @@ import type {
 } from '../utils/capable-check.js'
 
 import { BoxBase } from './utils.js'
+import { outsideTransfer } from './transfer.js'
 import { recursiveBox, recursiveRevive } from './index.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import { isJsonOnlyTransport } from '../utils/type-guards.js'
@@ -244,7 +245,9 @@ export const box = <T, T2 extends RevivableContext = RevivableContext>(
     context.sendMessage({
       type: 'message',
       remoteUuid: context.remoteUuid,
-      data: recursiveBox(data, context),
+      // outsideTransfer: liveRef.start() below can flush queued messages synchronously
+      // while a transfer() extent is on the stack - queued values are not part of it
+      data: outsideTransfer(() => recursiveBox(data, context)),
       portId,
       seq: nextOutSeq(context, portId),
     })
@@ -290,13 +293,21 @@ const createProtocolPort = <T>(
   const onMessage = ({ data }: MessageEvent<Capable>): void => {
     target.dispatchEvent(new MessageEvent('message', { data: recursiveRevive(data, ctx) }))
   }
+  // A message the platform cannot deserialize (e.g. Gecko dropping a transferred VideoFrame)
+  // is silently discarded by the port; forward it so consumers can error instead of losing data.
+  const onMessageError = (): void => {
+    target.dispatchEvent(new Event('messageerror'))
+  }
   const onClose = (): void => {
     target.dispatchEvent(new Event('close'))
   }
   port.addEventListener('message', onMessage)
+  port.addEventListener('messageerror', onMessageError as EventListener)
   port.addEventListener('close', onClose as EventListener)
   target.postMessage = (data: T, opt?: Transferable[] | StructuredSerializeOptions) => {
-    const boxed = recursiveBox(data as Capable, ctx)
+    // outsideTransfer: a fresh walk - move semantics come from wrappers in `data` (e.g.
+    // forceTransfer-marked chunks), never from an extent that happens to be on the stack
+    const boxed = outsideTransfer(() => recursiveBox(data as Capable, ctx))
     const transferables = getTransferableObjects(boxed)
     const extra = Array.isArray(opt) ? opt : []
     port.postMessage(boxed, extra.length ? [...transferables, ...extra] : transferables)
@@ -304,6 +315,7 @@ const createProtocolPort = <T>(
   target.start = () => port.start()
   target.close = () => {
     port.removeEventListener('message', onMessage)
+    port.removeEventListener('messageerror', onMessageError as EventListener)
     port.removeEventListener('close', onClose as EventListener)
     port.close()
   }
@@ -376,7 +388,7 @@ const reviveViaPortId = <T extends Capable>(
     context.sendMessage({
       type: 'message',
       remoteUuid: context.remoteUuid,
-      data: recursiveBox(data, context),
+      data: outsideTransfer(() => recursiveBox(data, context)),
       portId,
       seq: nextOutSeq(context, portId),
     })

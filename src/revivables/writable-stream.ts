@@ -3,6 +3,7 @@ import type { UnderlyingType } from './index.js'
 import type { Capable } from '../types.js'
 
 import { BoxBase } from './utils.js'
+import { isInTransfer, forceTransfer } from './transfer.js'
 import {
   createRevivableChannel,
   revive as reviveMessagePort,
@@ -26,7 +27,8 @@ export type Msg = WriteContext | WriteAck
 
 export type BoxedWritableStream<T extends WritableStream = WritableStream> =
   & BoxBaseType<typeof type>
-  & { port: BoxedMessagePort<Msg> }
+  // transferChunks rides the wire because chunks originate on the revive side; old peers ignore it
+  & { port: BoxedMessagePort<Msg>, transferChunks?: true }
   & { [UnderlyingType]: T }
 
 export const isType = (value: unknown): value is WritableStream =>
@@ -56,6 +58,10 @@ export const box = <T extends WritableStream, T2 extends RevivableContext>(
     else if (data.type === 'close') settle(writer.close(), true)
     else if (data.type === 'abort') settle(writer.abort((data as { reason: Capable }).reason as any), true)
   })
+  // A write the platform failed to deserialize would otherwise never be acked, hanging the writer.
+  localPort.addEventListener('messageerror', () => {
+    localPort.postMessage({ type: 'err', error: 'osra: a chunk failed to deserialize on this platform' })
+  })
   // Abnormal channel death: abort the sink and release the writer lock instead of holding both forever.
   localPort.addEventListener('close', () => {
     if (terminated) return
@@ -64,7 +70,12 @@ export const box = <T extends WritableStream, T2 extends RevivableContext>(
   }, { once: true })
   localPort.start()
 
-  return { ...BoxBase, type, port: boxedRemote } as BoxedWritableStream<T>
+  return {
+    ...BoxBase,
+    type,
+    port: boxedRemote,
+    ...(isInTransfer() ? { transferChunks: true as const } : {}),
+  } as BoxedWritableStream<T>
 }
 
 export const revive = <T extends BoxedWritableStream, T2 extends RevivableContext>(
@@ -107,8 +118,9 @@ export const revive = <T extends BoxedWritableStream, T2 extends RevivableContex
     return next
   }
 
+  const transferChunks = value.transferChunks === true
   return new WritableStream({
-    write: (chunk) => request({ type: 'write', chunk: chunk as Capable }),
+    write: (chunk) => request({ type: 'write', chunk: (transferChunks ? forceTransfer(chunk) : chunk) as Capable }),
     close: () => request({ type: 'close' }),
     abort: (reason) => request({ type: 'abort', reason: reason as Capable }),
   }) as T[UnderlyingType]

@@ -2,6 +2,7 @@ import type { Capable } from '../types.js'
 import type { UnderlyingType, RevivableContext, BoxBase as BoxBaseType } from './utils.js'
 
 import { BoxBase } from './utils.js'
+import { outsideTransfer } from './transfer.js'
 import { recursiveBox } from './index.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import { EventChannel, type EventPort } from '../utils/event-channel.js'
@@ -132,7 +133,10 @@ export const revive = <T extends BoxedFunction, T2 extends RevivableContext>(
       }, { once: true })
       returnLocal.start()
 
-      const callContext = recursiveBox([returnRemote, args] as unknown as Capable, context)
+      // outsideTransfer: user code can call a revived function synchronously from inside a
+      // transfer() extent (e.g. a getter evaluated while boxing a transferred chunk); these
+      // args are not part of that wrapper's graph
+      const callContext = outsideTransfer(() => recursiveBox([returnRemote, args] as unknown as Capable, context))
       port.postMessage(callContext, getTransferableObjects(callContext))
     })) as T[UnderlyingType]
 }

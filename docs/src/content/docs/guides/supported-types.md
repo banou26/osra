@@ -19,7 +19,7 @@ If you try to use a value that your transport does not support, osra's type syst
 | Function | ✅ | ✅ | Becomes `(...args) => Promise<result>`, arguments and results included |
 | `Promise` | ✅ | ✅ | |
 | Async generators and async iterables | ✅ | ✅ | |
-| `ReadableStream`, `WritableStream` | ✅ | ✅ | Proxied chunk by chunk, not moved |
+| `ReadableStream`, `WritableStream` | ✅ | ✅ | Proxied chunk by chunk, not moved; [`transfer()`](/guides/identity-and-transfer/) moves each chunk's buffers |
 | `MessagePort` | ✅ | ✅ | |
 | `AbortSignal` | ✅ | ✅ | |
 | `Request`, `Response`, `Headers` | ✅ | ✅ | Bodies stream |
@@ -52,7 +52,8 @@ Trying to send a unique `symbol` (`Symbol()`), will transmit it by using the [`i
 Trying to send a TypedArray will properly preserve its type:
 `Int8Array`, `Uint8Array`, `Uint8ClampedArray`, `Int16Array`, `Uint16Array`, `Int32Array`, `Uint32Array`, `Float16Array`, `Float32Array`, `Float64Array`, `BigInt64Array`, `BigUint64Array`.
 
-Note: Typed Arrays, are not [`transfer()`able](/guides/identity-and-transfer)
+Note: wrapping a TypedArray in [`transfer()`](/guides/identity-and-transfer/) moves its backing `ArrayBuffer`, detaching it on the sending side.\
+A view that only covers part of its buffer has that window copied out first, so only a view covering its whole buffer avoids the copy entirely.
 
 ## Blob & File
 

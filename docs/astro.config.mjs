@@ -48,7 +48,7 @@ export default defineConfig({
             { label: 'Transports', slug: 'guides/transports' },
             { label: 'Custom transports & Relays', slug: 'guides/custom-transports-and-relays' },
             { label: 'Supported types', slug: 'guides/supported-types' },
-            { label: 'Live values', slug: 'guides/live-values' },
+            { label: 'Revivables', slug: 'guides/revivables' },
             { label: 'identity() and transfer()', slug: 'guides/identity-and-transfer' },
             { label: 'Errors and lifecycle', slug: 'guides/lifecycle' },
             { label: 'Multiple peers', slug: 'guides/multiple-peers' },

@@ -1,40 +1,98 @@
 ---
 title: expose()
-description: The full signature, every option, and what the returned promise does.
+description: The full signature, every option, what you can expose, and what the returned promise resolves to.
 ---
 
 ```ts
 expose<Peer>(value, options): Exposed<Remote<Peer>>
 ```
 
-Sends `value` to the peer and gives you back the peer's value. Both sides call it. There is no client and no server, only two ends that each expose something.
+`expose()` is osra's single entry point: it sends your `value` to whoever connects on the transport, and gives you back the value the peer exposed.\
+Both sides call it, because in osra there is no client and no server, only two ends that each expose something.\
+The result is both awaitable and async-iterable: awaiting it gives you the first peer, iterating over it gives you every peer as it connects. See [connections](/guides/connections/).
 
-The result is awaitable and async-iterable. Awaiting gives the first peer, iterating gives every peer as it connects. See [connections](/guides/connections/).
+`Peer` is the type of the value the peer exposed.\
+Osra maps it through [`Remote<T>`](/reference/typescript/) so that what you get back matches what actually arrives, for example every function on the peer's value becomes an async function on yours.\
+You can leave it out on a side that only serves.
 
-`Peer` is the type the peer exposed. osra maps it through [`Remote<T>`](/reference/typescript/) so what you get back matches what actually arrives. Leave it out on a side that only serves.
+`value` is checked at compile time against [`Capable`](/reference/typescript/), which is the set of every type osra can send over the transport you passed, so a JSON transport rejects more than a structured one.\
+If you try to expose a value that your transport cannot carry, you will get a compile error at the call site, with the path to the offending field. See [supported types](/guides/supported-types/).
 
-`value` is checked against [`Capable`](/reference/typescript/), which is every type osra can send over the transport you passed. A value it cannot send is a compile error at the call site, with the path to the offending field.
+## What you can expose
+
+Most of the time you will expose an object of functions, but the `value` argument does not have to be one.\
+Any value osra [supports](/guides/supported-types/) can be exposed directly: plain data, a `Map`, a `ReadableStream`, or a single function.\
+Everything inside it is recursively searched for [revivable values](/guides/revivables/), so an object holding functions arrives as an object holding async function proxies.
+
+Exposing a bare function makes that function itself the thing the peer gets back:
+
+```ts twoslash title="worker.ts"
+import { expose } from 'osra'
+// ---cut---
+const payload = (a: number, b: number) => a + b
+
+expose(payload, { transport: globalThis })
+```
+
+```ts twoslash title="main.ts"
+// @filename: worker.ts
+const payload = (a: number, b: number) => a + b
+export type Payload = typeof payload
+// @filename: main.ts
+declare const worker: Worker
+import type { Payload } from './worker'
+import { expose } from 'osra'
+// ---cut---
+const add = await expose<Payload>({}, { transport: worker })
+
+await add(40, 2) // 42
+```
+
+Note how the main side passes an empty object as its own value: `expose<Payload>({}, { transport })` is how you consume without serving anything.\
+The `{}` still goes through the handshake as your exposed value, the peer simply has nothing to call on it.
+
+One thing to note is that a bare function is always treated as a value to expose, never as a factory.\
+If you want to build a different value for each peer that connects, wrap your factory in [`context()`](/guides/connections/#a-different-value-per-peer) instead, and osra will call it once per connection with that connection's context.
 
 ## Options
 
-| Option | Default | |
+| Option | Default | What it does |
 |---|---|---|
-| `transport` | required | The channel to talk over. See [transports](/guides/transports/). |
-| `key` | `'__OSRA_DEFAULT_KEY__'` | Which logical channel this connection is on. Both sides need the same one. |
-| `origin` | `'*'` | On window transports, the origin allowed in both directions. Sets `targetOrigin` going out, filters `event.origin` coming in. |
-| `name` | | A label for your side. |
-| `remoteName` | | Only accept a peer with this `name`. |
-| `unregisterSignal` | | Abort it to tear this side down. See [lifecycle](/guides/lifecycle/). |
+| `transport` | required | The channel to communicate over. See [transports](/guides/transports/) and [custom transports](/guides/custom-transports-and-relays/). |
+| `key` | `'__OSRA_DEFAULT_KEY__'` | The logical channel this connection lives on, both sides need the same one. See [multiple peers](/guides/multiple-peers/). |
+| `origin` | `'*'` | On window transports, the origin allowed in both directions. |
+| `name` | | A label for your side, carried on every message you send. |
+| `remoteName` | | Only accept messages from a peer with this `name`. |
+| `unregisterSignal` | | An `AbortSignal` that tears your whole side down when aborted. See [lifecycle](/guides/lifecycle/). |
 | `uuid` | random | Pin this instance's id instead of generating one. |
-| `remoteUuid` | | Pin the peer's id and skip the handshake. Set it on both sides or neither. See [multiple peers](/guides/multiple-peers/#uuid-and-remoteuuid). |
-| `revivableModules` | defaults | `defaults => modules`, to add or replace types. See [custom revivables](/guides/custom-revivables/). |
-| `connection` | `({ value }) => value` | What one connection resolves to, for the await and for iteration alike. See [connections](/guides/connections/). |
+| `remoteUuid` | | Pin the peer's id and skip the handshake. See [multiple peers](/guides/multiple-peers/#uuid-and-remoteuuid). |
+| `revivableModules` | defaults | A `defaults => modules` function to add or replace revivable types. See [custom revivables](/guides/custom-revivables/). |
+| `connection` | `({ value }) => value` | Decides what one connection resolves to, for the await and the iteration alike. See [connections](/guides/connections/). |
+
+A few of these deserve more detail than the table can carry.
+
+`origin` sets the `targetOrigin` of every outgoing `postMessage()` and filters incoming messages by their `event.origin`, so it covers both directions at once.\
+One thing to note is that the initial announce beacon is always broadcast with `'*'`, because a cross-origin iframe that has not finished loading still holds its initial `about:blank` document, and a strict `targetOrigin` would fail the browser's delivery check.\
+Everything after that first contact uses the origin you configured.
+
+`name` and `remoteName` are routing labels: `name` rides along on every message your side sends, and setting `remoteName` makes your side drop every message whose `name` does not match.\
+Also keep in mind that they are plain values on the wire, not credentials, so anyone on the channel can set them. See [multiple peers](/guides/multiple-peers/) for how the scoping options compose.
+
+`unregisterSignal` is the whole-side teardown: aborting it stops listening on the transport, notifies every connected peer, rejects your pending calls, and rejects the returned promise with the abort reason if it had not resolved yet.\
+If the signal is already aborted when you call `expose()`, nothing is registered at all and the promise rejects immediately.\
+See [errors and lifecycle](/guides/lifecycle/) for the full picture, including how to drop a single peer instead.
+
+`uuid` and `remoteUuid` pin the instance identities on both ends and skip the announce handshake entirely, which also gives up the retry loop that makes connecting tolerant of a slow start.\
+Set them on both sides or on neither, see [multiple peers](/guides/multiple-peers/#uuid-and-remoteuuid).
+
+`revivableModules` receives osra's default module list and returns the final one, so you can add your own types, drop defaults, or reorder them.\
+If you pass it, also read [custom module lists](#custom-module-lists) below, because the type system needs to be told about it separately.
 
 ## The result
 
-Awaiting it settles once a peer has connected, with that peer's value.
-
-If several peers answer, awaiting gives the **first**. Iterating gives all of them, each as it arrives:
+`expose()` returns a promise that is also async-iterable, typed [`Exposed<T>`](/reference/typescript/).\
+Awaiting it settles once the first peer has completed the handshake, and it settles with that peer's value.\
+If several peers answer on the same channel, awaiting still only ever gives you the first one, so when you expect more than one peer, iterate instead: the loop hands you every peer, each as it connects.
 
 ```ts twoslash
 import { expose } from 'osra'
@@ -46,21 +104,26 @@ for await (const remote of expose<Api>({}, { transport: worker })) {
 }
 ```
 
-Several loops over one `expose()` each see every peer. Peers that connect before anything iterates are buffered, up to 32, and replayed to the first loop that starts.
+Several loops over one `expose()` are independent readers that each see every peer, so one loop cannot consume a peer another was waiting for.\
+Peers that connect before anything iterates are buffered, capped at the 32 most recent, and every loop that starts later begins with that backlog before receiving new peers.\
+This means that a side that only ever awaits cannot accumulate connections forever.
 
-Pass `connection` to change what a peer resolves to, which is also how you reach its origin and its `abort`. See [connections](/guides/connections/).
+Pass the `connection` option to change what a peer resolves to: it receives `{ value, context }` and whatever it returns becomes what the await and the iteration hand back, which is also how you reach a peer's `origin` and its `abort()`.\
+It runs once per connection, on your side, after the handshake, and nothing it returns crosses the wire. See [connections](/guides/connections/).
 
-It rejects when:
+The promise rejects when the connection can never happen:
 
 - the transport cannot both send and receive
-- your value cannot be boxed, a circular structure for example
+- your own value cannot be sent, a circular structure for example
 - the peer's first message is malformed
 - the peer closes before the handshake completes
-- `unregisterSignal` aborts, with the abort reason
+- `unregisterSignal` aborts, in which case it rejects with the abort reason
 
-It stays pending while nobody is there. osra keeps announcing itself, so a peer that appears later still connects.
+If there is simply nobody on the other end yet, it stays pending instead: osra keeps announcing itself, backing off from 50ms up to once a second, so a worker that starts late or an iframe that has not loaded yet still connects.\
+If you need a timeout, race the promise against one yourself.
 
-A side that only serves can ignore the result entirely. It will not produce an unhandled rejection.
+One thing to note is that a side that only serves can ignore the result entirely.\
+Osra attaches its own no-op rejection handler, so a fire-and-forget `expose()` will never surface an unhandled rejection.
 
 ```ts twoslash
 import { expose } from 'osra'
@@ -71,7 +134,8 @@ expose(api, { transport: globalThis }) // fine, nothing to await
 
 ## Both directions
 
-Both sides can pass a value and both can call. The worker below serves and consumes at once:
+Since both ends expose something, both sides can pass a value and both sides can call into the other's.\
+The worker below serves an API and consumes the page's at the same time:
 
 ```ts twoslash title="worker.ts"
 import { expose } from 'osra'
@@ -88,7 +152,9 @@ await log('worker ready')
 
 ## Custom module lists
 
-When you pass `revivableModules`, pass the module list as the second type argument too, so the value check knows about your types:
+When you extend osra with [custom revivables](/guides/custom-revivables/), passing the `revivableModules` option makes your modules run, but the compile time value check does not learn about them from the option alone.\
+TypeScript has no partial type argument inference, so naming `Peer` resets every later type parameter to its default.\
+This means that you need to pass the module list as the second type argument too, so the `Capable` check knows about your types:
 
 ```ts
 expose<PeerApi, ReturnType<typeof myModules>>(value, {

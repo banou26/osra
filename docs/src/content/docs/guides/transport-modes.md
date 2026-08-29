@@ -25,4 +25,4 @@ This is only possible when the two peers can share the same memory space(the bro
 The other type of transport are called "JSON" [transports](/guides/transports), which includes [`WebSocket`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) and WebExtension's [`Port`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/Port).
 
 Osra will automatically choose the appropriate transport mode for you depending on your transport, so you generally don't have to worry about it.
-For cases where you are out of osra's default scope, you can always specify the transport mode manually through osra's [Custom Transport](/guides/custom-transports).
+For cases where you are out of osra's default scope, you can always specify the transport mode manually through osra's [Custom Transport](/guides/custom-transports-and-relays/).

@@ -18,7 +18,7 @@ The following table contains osra's natively supported transports, with their co
 | [`WebSocket`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) | JSON | |
 | WebExtension [`Port`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/Port) | JSON | |
 | WebExtension [`runtime.onMessage`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage) | JSON | Receive only, pair it with a `sendMessage` emit |
-| `{ emit, receive }` | either | See [custom transports](/guides/custom-transports/) |
+| `{ emit, receive }` | either | See [custom transports](/guides/custom-transports-and-relays/) |
 
 
 #### Examples

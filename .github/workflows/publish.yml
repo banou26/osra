@@ -1,0 +1,51 @@
+name: publish
+
+on:
+  workflow_run:
+    workflows: [test]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # publish exactly the commit the test run validated, not whatever main moved to since
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      # trusted publishing (OIDC) needs npm >= 11.5.1, node 22 ships an older one
+      - run: npm install -g npm@latest
+      - name: Skip when this version is already on the registry
+        id: version
+        run: |
+          local_version=$(node -p "require('./package.json').version")
+          published=$(npm view "osra@${local_version}" version 2>/dev/null || true)
+          if [ "$published" = "$local_version" ]; then
+            echo "publish=no" >> "$GITHUB_OUTPUT"
+            echo "osra@${local_version} is already published, nothing to do"
+          else
+            echo "publish=yes" >> "$GITHUB_OUTPUT"
+            echo "osra@${local_version} is not on the registry yet, publishing"
+          fi
+      - if: steps.version.outputs.publish == 'yes'
+        run: npm ci
+      # prepublishOnly runs clean + build, so this ships the freshly built package
+      - if: steps.version.outputs.publish == 'yes'
+        run: npm publish

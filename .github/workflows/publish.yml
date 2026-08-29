@@ -25,11 +25,12 @@ jobs:
         with:
           # publish exactly the commit the test run validated, not whatever main moved to since
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # no registry-url here: setup-node would write an .npmrc auth line with a placeholder
+      # NODE_AUTH_TOKEN, which makes npm skip the OIDC exchange trusted publishing needs
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
       # trusted publishing (OIDC) needs npm >= 11.5.1, node 22 ships an older one
       - run: npm install -g npm@latest
       - name: Skip when this version is already on the registry

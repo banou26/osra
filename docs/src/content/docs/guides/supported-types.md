@@ -19,7 +19,7 @@ If you try to use a value that your transport does not support, osra's type syst
 | Function | ✅ | ✅ | Becomes `(...args) => Promise<result>`, arguments and results included |
 | `Promise` | ✅ | ✅ | |
 | Async generators and async iterables | ✅ | ✅ | |
-| `ReadableStream`, `WritableStream` | ✅ | ✅ | Proxied chunk by chunk, not moved; [`transfer()`](/guides/identity-and-transfer/) moves each chunk's buffers |
+| `ReadableStream`, `WritableStream` | ✅ | ✅ | Always proxied chunk by chunk; [`transfer()`](/guides/identity-and-transfer/) moves the transferables inside each chunk, never the stream itself |
 | `MessagePort` | ✅ | ✅ | |
 | `AbortSignal` | ✅ | ✅ | |
 | `Request`, `Response`, `Headers` | ✅ | ✅ | Bodies stream |

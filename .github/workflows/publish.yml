@@ -33,10 +33,6 @@ jobs:
           cache: npm
       # trusted publishing (OIDC) needs npm >= 11.5.1, node 22 ships an older one
       - run: npm install -g npm@latest
-      - name: OIDC sanity
-        run: |
-          npm --version
-          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then echo "OIDC env present"; else echo "OIDC env MISSING"; fi
       - name: Skip when this version is already on the registry
         id: version
         run: |
@@ -53,4 +49,4 @@ jobs:
         run: npm ci
       # prepublishOnly runs clean + build, so this ships the freshly built package
       - if: steps.version.outputs.publish == 'yes'
-        run: npm publish --loglevel verbose
+        run: npm publish

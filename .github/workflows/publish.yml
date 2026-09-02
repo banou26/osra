@@ -31,7 +31,7 @@ jobs:
       publish: ${{ steps.version.outputs.publish }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # publish exactly the commit the test run validated, not whatever main moved to since
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -50,7 +50,7 @@ jobs:
           fi
       # no registry-url here: setup-node would write an .npmrc auth line with a placeholder
       # NODE_AUTH_TOKEN, which makes npm skip the OIDC exchange trusted publishing needs
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: npm
@@ -84,7 +84,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # --generate-notes diffs against the previous tag, which needs the history behind this one

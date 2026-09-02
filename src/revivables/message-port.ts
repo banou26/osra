@@ -197,6 +197,36 @@ const makeBoxGcNet = (
   if (state) tombstonePort(state, portId)
 }
 
+/** Payloads that are already boxed, so the port listener forwards them as they are.
+ *
+ *  `function` has to box eagerly (the args must be snapshotted in the caller's synchronous frame,
+ *  before user code can mutate them), and the port would otherwise walk the very same value again:
+ *  boxes short-circuit, but every plain container in between is rebuilt and every leaf re-dispatched
+ *  through the whole module list, in both directions. `EventPort.postMessage` hands the peer the same
+ *  object reference, which is what makes the mark findable on the other side. */
+const preBoxedPayloads = new WeakSet<object>()
+
+const isMarkable = (value: unknown): value is object =>
+  value !== null && (typeof value === 'object' || typeof value === 'function')
+
+/** Post a payload that is already boxed. Anything else must go through `postMessage` as usual. */
+export const postPreBoxed = (
+  port: MessagePort,
+  boxed: Capable,
+  transferables?: Transferable[],
+): void => {
+  if (isMarkable(boxed)) preBoxedPayloads.add(boxed)
+  port.postMessage(boxed, transferables ?? [])
+}
+
+/** Consumes the mark: a value posted twice is boxed the second time, as it must be. */
+const boxUnlessPreBoxed = <TContext extends RevivableContext>(data: Capable, context: TContext): Capable =>
+  isMarkable(data) && preBoxedPayloads.delete(data)
+    ? data
+    // outsideTransfer: liveRef.start() can flush queued messages synchronously while a transfer()
+    // extent is on the stack - queued values are not part of it
+    : outsideTransfer(() => recursiveBox(data, context)) as Capable
+
 export const box = <T, T2 extends RevivableContext = RevivableContext>(
   value: StructurableTransferablePort<T>,
   context: T2,
@@ -245,9 +275,7 @@ export const box = <T, T2 extends RevivableContext = RevivableContext>(
     context.sendMessage({
       type: 'message',
       remoteUuid: context.remoteUuid,
-      // outsideTransfer: liveRef.start() below can flush queued messages synchronously
-      // while a transfer() extent is on the stack - queued values are not part of it
-      data: outsideTransfer(() => recursiveBox(data, context)),
+      data: boxUnlessPreBoxed(data, context),
       portId,
       seq: nextOutSeq(context, portId),
     })
@@ -388,7 +416,7 @@ const reviveViaPortId = <T extends Capable>(
     context.sendMessage({
       type: 'message',
       remoteUuid: context.remoteUuid,
-      data: outsideTransfer(() => recursiveBox(data, context)),
+      data: boxUnlessPreBoxed(data as Capable, context),
       portId,
       seq: nextOutSeq(context, portId),
     })

@@ -33,6 +33,7 @@ export const transportTests: Readonly<Record<string, Readonly<Record<string, (tr
     userPoint: customRevivables.userPoint,
     userPointReturn: customRevivables.userPointReturn,
     userPointDefaultsStillWork: customRevivables.userPointDefaultsStillWork,
+    callArgsAreWalkedOnce: customRevivables.callArgsAreWalkedOnce,
   },
 }
 

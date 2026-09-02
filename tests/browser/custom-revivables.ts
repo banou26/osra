@@ -77,3 +77,39 @@ export const userPointDefaultsStillWork = async (transport: Transport) => {
   expect(result).to.be.instanceOf(Date)
   expect(result.toISOString()).to.equal('2026-04-08T00:00:00.000Z')
 }
+
+/** The function module boxes a call payload eagerly, and the port it posts on must not walk the very
+ *  same payload again. A rebuilt copy is indistinguishable from the original once it arrives, so the
+ *  only way to see the second walk is from inside the walk itself: a module whose `isType` counts how
+ *  many times it is offered a value carrying the probe marker. */
+let probeVisits = 0
+/** Claims nothing, ever: it is here to be OFFERED values, not to box them. */
+type NeverClaimed = { probeNeverClaimed: true }
+const walkProbe = {
+  type: 'walk-probe' as const,
+  isType: (value: unknown): value is NeverClaimed => {
+    if (value !== null && typeof value === 'object' && (value as { probe?: string }).probe === 'walk') {
+      probeVisits++
+    }
+    return false
+  },
+  box: (_value: NeverClaimed, _context: RevivableContext) => ({ ...BoxBase, type: 'walk-probe' as const }),
+  revive: (_value: { type: 'walk-probe' }, _context: RevivableContext): NeverClaimed => ({ probeNeverClaimed: true }),
+} as const satisfies RevivableModule
+
+const withWalkProbe = <TDefaults extends readonly RevivableModule[]>(defaults: TDefaults) =>
+  [walkProbe, ...defaults] as const
+
+export const callArgsAreWalkedOnce = async (transport: Transport) => {
+  probeVisits = 0
+  const value = { take: async (received: { probe: string }) => received.probe }
+  expose(value, { transport, revivableModules: withWalkProbe })
+
+  const remote = await expose<typeof value, ReturnType<typeof withWalkProbe>>(
+    {},
+    { transport, revivableModules: withWalkProbe },
+  )
+
+  expect(await remote.take({ probe: 'walk' })).to.equal('walk')
+  expect(probeVisits).to.equal(1)
+}

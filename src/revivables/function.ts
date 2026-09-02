@@ -4,10 +4,9 @@ import type { UnderlyingType, RevivableContext, BoxBase as BoxBaseType } from '.
 import { BoxBase } from './utils.js'
 import { outsideTransfer } from './transfer.js'
 import { recursiveBox } from './index.js'
-import { getTransferableObjects } from '../utils/transferable.js'
 import { EventChannel, type EventPort } from '../utils/event-channel.js'
 import { isTornDown, onTeardown } from '../utils/teardown.js'
-import { box as boxMessagePort, revive as reviveMessagePort, BoxedMessagePort } from './message-port.js'
+import { box as boxMessagePort, postPreBoxed, revive as reviveMessagePort, BoxedMessagePort } from './message-port.js'
 
 export const type = 'function' as const
 
@@ -78,7 +77,10 @@ export const box = <T extends (...args: any[]) => any, T2 extends RevivableConte
           return recursiveBox({ type: 'throw', error: error as Capable } as Capable, context)
         }
       })()
-      returnPort.postMessage(boxedResult, getTransferableObjects(boxedResult))
+      // No transfer list: the port on this side is always an EventPort (function boxes its channel with
+      // EventChannel, so the peer revives a synthetic port), which ignores one. The list that matters is
+      // computed on the envelope at the transport boundary, in connections/index.ts.
+      postPreBoxed(returnPort, boxedResult as Capable)
       // Defer close so the result reaches the peer before tear-down; without the close portHandlers grows one entry per call.
       queueMicrotask(() => {
         try { returnPort.close() } catch { /* may already be closed */ }
@@ -137,7 +139,7 @@ export const revive = <T extends BoxedFunction, T2 extends RevivableContext>(
       // transfer() extent (e.g. a getter evaluated while boxing a transferred chunk); these
       // args are not part of that wrapper's graph
       const callContext = outsideTransfer(() => recursiveBox([returnRemote, args] as unknown as Capable, context))
-      port.postMessage(callContext, getTransferableObjects(callContext))
+      postPreBoxed(port, callContext as Capable)
     })) as T[UnderlyingType]
 }
 

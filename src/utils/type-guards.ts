@@ -101,9 +101,6 @@ export const instanceOfAny = (value: unknown, ctors: readonly (AnyConstructor | 
 
 export const isSharedArrayBuffer = (value: unknown): boolean =>
   instanceOfAny(value, [globalThis.SharedArrayBuffer])
-/** @deprecated Renamed - this only ever checked SharedArrayBuffer, unlike
- *  the unrelated clonable fallback module. Use isSharedArrayBuffer. */
-export const isClonable = isSharedArrayBuffer
 
 // Some entries are also clonable (ArrayBuffer, ImageBitmap, …) - outside a `transfer` box they fall back to clone
 export const isTransferable = (value: unknown): value is Transferable =>

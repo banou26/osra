@@ -23,9 +23,22 @@ import { registerOsraMessageListener, sendOsraMessage } from '../utils/transport
 import { runTeardown } from '../utils/teardown.js'
 import { asExposed, createConnectionQueue, isContextual, mergeRevivableModules, normalizeTransport, CONTEXT } from './utils.js'
 
-export * from './bidirectional.js'
+// Explicit, not `export *`: this barrel is re-exported by the package root, and a star put protocol
+// plumbing in osra's public namespace under names nobody would choose for it. `type` (the string
+// 'bidirectional'), `init`, `startBidirectionalConnection`, `CONTEXT`, `asExposed`,
+// `createConnectionQueue`, `isContextual`, `mergeRevivableModules` and `normalizeTransport` are all
+// internal; import them from their own module if you are working inside osra.
+export type {
+  InitMessage, Messages,
+  // not ConnectionContext: this module declares its own, which shadowed the star export anyway
+  ConnectionRevivableContext, BidirectionalConnection,
+} from './bidirectional.js'
 export * from './relay.js'
-export * from './utils.js'
+export { context } from './utils.js'
+export type {
+  Connected, Contextual, Exposed, StartConnectionsOptions,
+  ProtocolContext, ProtocolEventMap, ProtocolEventTarget, ConnectionQueue,
+} from './utils.js'
 
 export type ConnectionModule<T> = {
   readonly type: string
@@ -34,7 +47,8 @@ export type ConnectionModule<T> = {
   readonly Messages?: T
 }
 
-export const connections = [
+// internal: the list of protocol modes the connection layer mounts
+const connections = [
   bidirectional
 ] as const
 

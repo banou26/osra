@@ -8,4 +8,6 @@ export * from './event-channel.js'
 export * from './type.js'
 export * from './capable-check.js'
 export * from './gc-tracker.js'
-export * from './teardown.js'
+// runTeardown is deliberately not re-exported: calling it tears a live connection's revivables
+// down from under osra. Module authors get the two registration halves.
+export { onTeardown, isTornDown } from './teardown.js'

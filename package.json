@@ -50,6 +50,8 @@
     "print-coverage": "npx nyc report",
     "clean-coverage": "node -e \"for (const dir of ['.nyc_output', 'coverage']) require('node:fs').rmSync(dir, { recursive: true, force: true })\"",
     "type-check": "node ./node_modules/typescript7/bin/tsc --noEmit && node ./node_modules/typescript7/bin/tsc --noEmit -p tsconfig.tests.json",
+    "lint": "vp lint",
+    "format": "vp fmt",
     "start-server": "http-server -p 3000",
     "build-extension-test": "node build-extension-test.mjs",
     "test-extension": "npm run build-extension-test && npx playwright test -c playwright.extension.config.ts",

@@ -9,7 +9,10 @@ export default defineConfig({
       'no-var': 'error',
       'prefer-const': 'error',
     },
-    options: { typeAware: true, typeCheck: true },
+    // typeCheck stays off: it resolves types on its own, without the repo's tsconfigs, so it invents
+    // errors for the ambient globals (chrome, Uint8Array.toHex) that `npm run type-check` resolves
+    // correctly. That is tsc's job here; the lint is for the rules below.
+    options: { typeAware: true, typeCheck: false },
     overrides: [
       {
         files: ['tests/**', '**/*.spec.ts', '**/*.test.ts', 'examples/**'],

@@ -22,11 +22,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # FIRST: the reference pages under docs/src/content/docs/api are generated from src/, and they
+      # are gitignored, so a checker that runs before this one is reading a site with a fifth of its
+      # pages missing. It reported a link into /api/ as broken for exactly that reason.
+      - run: npm run docs-gen-reference
       # a twoslash block that stops compiling does NOT fail the astro build, it drops the whole page
       # body, so this is what keeps a blank page from deploying. It compiles the examples against the
       # PUBLISHED osra the docs workspace depends on, which makes it a drift gate too
       - run: npm run docs-check-twoslash
       - run: npm run docs-check-links
-      # the reference pages under docs/src/content/docs/api are generated from src/ by the prebuild hook
       - run: npm run docs-build
       - run: npm run docs-check-html

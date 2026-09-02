@@ -84,10 +84,16 @@ export type Capable<
 export type Remote<T> =
   T extends (...args: infer P) => infer R ? (...args: P) => Promise<Remote<Awaited<R>>>
   : T extends Promise<infer U> ? Promise<Remote<U>>
+  // these three carry values that are boxed and revived like any other, so what you read out of them
+  // on this side is the REMOTE shape: a Map of functions hands you promise-returning ones. A
+  // WritableStream is the other way round, you write local values into it, so it passes through
+  : T extends Map<infer K, infer V> ? Map<Remote<K>, Remote<V>>
+  : T extends Set<infer V> ? Set<Remote<V>>
+  : T extends ReadableStream<infer C> ? ReadableStream<Remote<C>>
   : T extends
-      | Map<any, any> | Set<any> | Date | Error | RegExp
+      | Date | Error | RegExp
       | ArrayBuffer | ArrayBufferView | Blob | File | FileList
-      | ReadableStream | WritableStream | MessagePort | EventTarget
+      | WritableStream | MessagePort | EventTarget
       | Request | Response | Headers
     ? T
   : T extends AsyncIterable<infer U> ? AsyncIterableIterator<Remote<U>>

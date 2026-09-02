@@ -1,5 +1,5 @@
 import type {
-  Capable, Structurable, Jsonable,
+  Capable, Structurable, Jsonable, Remote,
   RevivableModule, RevivableContext, BoxBase,
   DeepReplaceWithBox, ReplaceWithBox,
 } from '../../src/index'
@@ -147,3 +147,14 @@ export const __types = () => null as unknown as
   | [_CheckMapReplaced, _CheckSetReplaced, _CheckBigIntReplaced]
   | [_CheckPlainPassthrough, _CheckDeepObjMap, _CheckDeepArrMap]
   | [_PointTypeLiteral]
+
+// A Map, a Set and a ReadableStream carry values through the same box/revive path as anything else,
+// so their contents come out in remote shape: functions inside them are promise-returning here.
+type _RemoteContainers = [
+  Expect<Equals<Remote<Map<string, () => number>>, Map<string, () => Promise<number>>>>,
+  Expect<Equals<Remote<Set<() => number>>, Set<() => Promise<number>>>>,
+  Expect<Equals<Remote<ReadableStream<() => number>>, ReadableStream<() => Promise<number>>>>,
+  Expect<Equals<Remote<Map<string, number>>, Map<string, number>>>,
+  // written into, not read out of: the chunks you write are local values
+  Expect<Equals<Remote<WritableStream<() => number>>, WritableStream<() => number>>>,
+]

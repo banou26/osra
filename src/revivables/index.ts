@@ -111,6 +111,35 @@ const descend = <TOut>(value: unknown, transform: (v: Capable) => unknown): TOut
 const boxPath = new WeakSet<object>()
 const revivePath = new WeakSet<object>()
 
+// Depth of the current top-level box walk, and the side effects waiting on it to finish. Same
+// synchronous-walk invariant as boxPath.
+let boxDepth = 0
+let pendingWalkEffects: Array<{ commit: () => void, rollback: () => void }> = []
+
+/** Hold a side effect until the whole box walk this value belongs to has finished, and undo it if the
+ *  walk throws. A module that records state the PEER will be told about ("it knows this id now") must
+ *  not keep that record when a later sibling breaks the message it was recorded for: nothing ships,
+ *  and every later send would then reference something the peer never received. Outside a walk the
+ *  effect is already settled, so `commit` runs immediately. */
+export const onBoxWalkSettled = (commit: () => void, rollback: () => void): void => {
+  if (boxDepth === 0) {
+    commit()
+    return
+  }
+  pendingWalkEffects.push({ commit, rollback })
+}
+
+const settleBoxWalk = (failed: boolean) => {
+  const effects = pendingWalkEffects
+  pendingWalkEffects = []
+  for (const effect of effects) {
+    try {
+      if (failed) effect.rollback()
+      else effect.commit()
+    } catch { /* one module's bookkeeping must not break another's */ }
+  }
+}
+
 const isTrackable = (value: unknown): value is object =>
   value !== null && (typeof value === 'object' || typeof value === 'function')
 
@@ -148,10 +177,16 @@ export const recursiveBox = <
     }
     boxPath.add(value)
   }
+  boxDepth++
+  let failed = true
   try {
-    return boxDispatch(value, context)
+    const boxed = boxDispatch(value, context)
+    failed = false
+    return boxed
   } finally {
     if (track) boxPath.delete(value)
+    boxDepth--
+    if (boxDepth === 0) settleBoxWalk(failed)
   }
 }
 

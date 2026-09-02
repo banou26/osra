@@ -3,7 +3,7 @@ import type { RevivableContext, BoxBase as BoxBaseType } from './utils.js'
 import type { UnderlyingType } from '../utils/type.js'
 
 import { BoxBase } from './utils.js'
-import { boxClaimedValue, recursiveRevive } from './index.js'
+import { boxClaimedValue, onBoxWalkSettled, recursiveRevive } from './index.js'
 import { isTornDown, onTeardown } from '../utils/teardown.js'
 
 export const type = 'identity' as const
@@ -74,6 +74,9 @@ type IdentityState = {
   /** Values revived from this peer, held until the peer says its own reference is gone: it can send
    *  the bare id at any time and expects this exact value back. */
   readonly pins: Map<string, unknown>
+  /** The id to use for a value whose realm id is already spoken for on THIS connection by a different
+   *  local value. See `idOnConnection`. */
+  readonly aliasIds: WeakMap<WeakKey, string>
   readonly disposeRegistry: FinalizationRegistry<string>
 }
 
@@ -84,6 +87,7 @@ const getOrCreateState = (context: RevivableContext): IdentityState => {
   if (existing) return existing
   const idToLocal = new Map<string, WeakRef<WeakKey>>()
   const pins = new Map<string, unknown>()
+  const aliasIds = new WeakMap<WeakKey, string>()
   const disposeRegistry = new FinalizationRegistry<string>((id) => {
     idToLocal.delete(id)
     if (isTornDown(context)) return
@@ -91,7 +95,7 @@ const getOrCreateState = (context: RevivableContext): IdentityState => {
       context.sendMessage({ type: 'identity-dispose', remoteUuid: context.remoteUuid, id })
     } catch { /* connection already closed */ }
   })
-  const state: IdentityState = { idToLocal, pins, disposeRegistry }
+  const state: IdentityState = { idToLocal, pins, aliasIds, disposeRegistry }
   connectionStates.set(context, state)
   context.eventTarget.addEventListener('message', ({ detail }) => {
     if (detail?.type !== 'identity-dispose') return
@@ -110,6 +114,28 @@ const getOrCreateState = (context: RevivableContext): IdentityState => {
 export const isType = (value: unknown): value is IdentityMarked =>
   isObjectOrFunction(value) && valueToId.has(value)
 
+/** The id this value travels under ON THIS CONNECTION.
+ *
+ *  Normally that is its realm id, and the whole chain mechanism rests on the two being the same. They
+ *  can only differ when one origin identity was revived twice in this realm, once per connection it
+ *  arrived on: both revived values then carry the same realm id, and forwarding both onto a third
+ *  connection would send the second as a bare id the peer resolves to the FIRST one, silently handing
+ *  it one object where two were sent. Re-minting the realm id instead would be worse: it is the value's
+ *  identity on every OTHER connection too, including the one it came from, so re-minting breaks the
+ *  round trip home. The substitute is therefore per connection, and the loser of the race is the one
+ *  that gets it. */
+const idOnConnection = (value: WeakKey, state: IdentityState): string => {
+  const alias = state.aliasIds.get(value)
+  if (alias !== undefined) return alias
+  const id = idFor(value)
+  const record = state.idToLocal.get(id)
+  if (record === undefined || record.deref() === value) return id
+  // Taken here by another local value (or by one already collected, whose pin the peer still holds).
+  const substitute = globalThis.crypto.randomUUID()
+  state.aliasIds.set(value, substitute)
+  return substitute
+}
+
 /** The shared tail of both box paths: hand the peer the id alone when it can already resolve it,
  *  and otherwise the id plus the payload, remembering that this peer now knows it. */
 const boxTracked = (
@@ -117,14 +143,23 @@ const boxTracked = (
   buildInner: () => Capable,
   state: IdentityState,
 ): BoxedIdentity => {
-  const id = idFor(value)
+  const id = idOnConnection(value, state)
   if (state.idToLocal.has(id)) return { ...BoxBase, type, id } as BoxedIdentity
   // Before recording the id, so a value containing itself still hits the cycle guard rather than
   // shipping a self-reference the peer could never revive.
   const inner = buildInner()
+  // Recorded now so a second occurrence in the SAME message rides the id, and rolled back if the walk
+  // never finishes: the record is a claim about what the peer received, and a message that was never
+  // built was never received.
   state.idToLocal.set(id, new WeakRef(value))
-  // The peer holds its revived value until we tell it this one is gone.
-  state.disposeRegistry.register(value, id)
+  state.disposeRegistry.register(value, id, value)
+  onBoxWalkSettled(
+    () => {},
+    () => {
+      state.idToLocal.delete(id)
+      state.disposeRegistry.unregister(value)
+    },
+  )
   return { ...BoxBase, type, id, inner } as BoxedIdentity
 }
 
@@ -159,6 +194,12 @@ export const revive = <T extends BoxedIdentity, TContext extends RevivableContex
   const known = state.idToLocal.get(value.id)?.deref()
   if (known !== undefined) return known as T[UnderlyingType]
   if (!('inner' in value) || value.inner === undefined) {
+    // The peer believes we know this id, so something between its record and here lost the payload.
+    // Tell it to forget the record, which is exactly what dispose does on that side, so its next send
+    // of that value carries the payload again instead of repeating this.
+    try {
+      context.sendMessage({ type: 'identity-dispose', remoteUuid: context.remoteUuid, id: value.id })
+    } catch { /* connection already closed */ }
     throw new Error(`osra identity: received id=${value.id} with no inner payload and nothing local to resolve it to`)
   }
   const revived = recursiveRevive(value.inner, context)

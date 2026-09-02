@@ -241,3 +241,18 @@ export const markedValueIsOneReferenceEvenWhenSentUnmarked = async (transport: T
   expect(remote.plain1).to.not.equal(remote.plain2)
   expect(remote.ref1).to.equal(remote.ref2)
 }
+
+export const failedSendDoesNotStrandTheIdentityRecord = async (transport: Transport) => {
+  const obj = { a: 1 }
+  const value = { take: async (received: { a: number }, _extra?: unknown) => received.a }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  const circular: Record<string, unknown> = {}
+  circular.self = circular
+
+  // the identity is boxed, then a sibling breaks the walk, so the message never ships
+  await expect(remote.take(identity(obj), circular)).to.be.rejected
+  // the peer was never told about the id, so this send has to carry the payload again
+  expect(await remote.take(identity(obj))).to.equal(1)
+}

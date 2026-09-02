@@ -113,6 +113,89 @@ export const identityToTwoPeersKeepsEachSideSeparate = async () => {
   expect(await peerB.isOriginal(fromB)).to.equal(true)
 }
 
+/** Two connections, one origin identity: the realm ends up holding two local values that both carry
+ *  the origin's id. Forwarding both onto a third connection must still deliver two values. */
+export const aliasedIdentitiesStayDistinctOnAThirdContext = async () => {
+  const [a1, a2] = structuredPair()
+  const [b1, b2] = structuredPair()
+  const [c1, c2] = structuredPair()
+
+  const marker: Marked = { tag: 'v1' }
+  const origin = {
+    get: async () => identity(marker),
+    isOriginal: async (value: Marked) => value === marker,
+  }
+  expose(origin, { transport: a1 })
+  expose(origin, { transport: b1 })
+
+  const viaA = await expose<typeof origin>({}, { transport: a2 })
+  const viaB = await expose<typeof origin>({}, { transport: b2 })
+
+  const fromA = await viaA.get()
+  marker.tag = 'v2'
+  const fromB = await viaB.get()
+  expect(fromA).to.not.equal(fromB)
+  expect([fromA.tag, fromB.tag]).to.deep.equal(['v1', 'v2'])
+
+  const middle = { both: async (): Promise<Marked[]> => [fromA, fromB] }
+  expose(middle, { transport: c1 })
+  const far = await expose<typeof middle>({}, { transport: c2 })
+
+  const [first, second] = await far.both()
+  expect(first).to.not.equal(second)
+  expect([first?.tag, second?.tag]).to.deep.equal(['v1', 'v2'])
+
+  // and the substitute id must not cost either value its own way home
+  expect(await viaA.isOriginal(fromA)).to.equal(true)
+  expect(await viaB.isOriginal(fromB)).to.equal(true)
+}
+
+/** A message that is built but never delivered leaves the sender believing the peer knows the id.
+ *  The receiver has to say it does not, rather than failing on every send from then on. */
+export const unresolvableIdentityHealsAfterOneDroppedMessage = async () => {
+  const { port1, port2 } = new MessageChannel()
+  let dropped = false
+  const side = (port: MessagePort, lossy: boolean): Transport => ({
+    isJson: true,
+    receive: (listener: (message: Message, context: Record<string, never>) => void) => {
+      port.addEventListener('message', event => {
+        listener(JSON.parse((event as MessageEvent).data as string) as Message, {})
+      })
+      port.start()
+    },
+    emit: (message: Message) => {
+      const payload = JSON.stringify(message)
+      if (lossy && !dropped && payload.includes('"identity"') && payload.includes('"inner"')) {
+        dropped = true
+        return
+      }
+      port.postMessage(payload)
+    },
+  })
+
+  let held: Marked | undefined
+  const api = {
+    // its call message is the one that gets dropped, which stalls that port and nothing else
+    lost: async (value: Marked) => value.tag,
+    hold: async (value: Marked) => { held = value; return value.tag },
+  }
+  expose(api, { transport: side(port1, false) })
+  const remote = await expose<typeof api>({}, { transport: side(port2, true) })
+
+  const marked: Marked = identity({ tag: 'kept' })
+  // carries the payload, and is the message that gets dropped, so this call never settles
+  void remote.lost(marked).catch(() => {})
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(dropped).to.equal(true)
+  // a bare id on a healthy port, which the peer cannot resolve: it must ask us to forget the record
+  void remote.hold(marked).catch(() => {})
+  await new Promise(resolve => setTimeout(resolve, 100))
+
+  // with the record forgotten, this send carries the payload again
+  expect(await remote.hold(marked)).to.equal('kept')
+  expect(held?.tag).to.equal('kept')
+}
+
 export const identityAcrossFiveContexts = () => chainKeepsIdentity(structuredPair)
 export const identityAcrossFiveContextsJson = () => chainKeepsIdentity(jsonPair)
 export const identityStableAcrossCalls = () => chainIsStableAcrossCalls(structuredPair)

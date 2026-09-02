@@ -22,12 +22,18 @@ const TEST_BUNDLE_PATH = path.join(
 )
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('http://localhost:3000')
+  // OSRA_TEST_URL only for the case where something else already holds :3000 locally; the config's
+  // own webServer, and therefore CI, is unaffected. The page's content barely matters (the bundle is
+  // injected from disk), but the worker tests fetch build/index.js from this origin.
+  await page.goto(process.env.OSRA_TEST_URL ?? 'http://localhost:3000')
   await page.addScriptTag({ path: TEST_BUNDLE_PATH, type: 'module' })
   await page.waitForFunction(() => '__osraRun' in globalThis)
 })
 
 test.afterEach(async ({ page }) => {
+  // Only when the bundle was built instrumented (VITE_COVERAGE), otherwise every test in every run
+  // serializes a coverage object over CDP and writes a file nothing ever reads.
+  if (!process.env.VITE_COVERAGE) return
   const coverage = await page.evaluate(() => (window as unknown as { __coverage__?: unknown }).__coverage__)
   if (!coverage) return
   const dir = path.join(process.cwd(), '.nyc_output')

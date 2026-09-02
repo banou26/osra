@@ -46,7 +46,7 @@
     "test": "npm run build && npm run build-test && npx playwright test",
     "test-watch": "set PWTEST_WATCH=1 & npx playwright test",
     "test-watch-headful": "nodemon --watch build-test --exec \"npx playwright test --headed\"",
-    "test-with-coverage": "npm run build-test && npx playwright test && npm run print-coverage && npm run clean-coverage",
+    "test-with-coverage": "VITE_COVERAGE=true npm run build-test && VITE_COVERAGE=true npx playwright test && npm run print-coverage && npm run clean-coverage",
     "print-coverage": "npx nyc report",
     "clean-coverage": "rimraf .nyc_output coverage",
     "type-check": "node ./node_modules/typescript7/bin/tsc --noEmit && node ./node_modules/typescript7/bin/tsc --noEmit -p tsconfig.tests.json",

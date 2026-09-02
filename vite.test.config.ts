@@ -7,7 +7,10 @@ export default defineConfig({
       include: 'src/*',
       exclude: ['node_modules', 'tests/'],
       extension: ['.js', '.ts'],
-      requireEnv: false,
+      // requireEnv: instrument ONLY under VITE_COVERAGE. Unconditional instrumentation meant every
+      // run of every test wrote a coverage dump nothing read: 19 GB and 54k files before anyone
+      // noticed. `npm run test-with-coverage` sets it, plain `npm test` does not.
+      requireEnv: true,
       forceBuildInstrument: true
     })
   ],

@@ -17,6 +17,9 @@ import {
 
 export const type = 'promise' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type Context =
   | { type: 'resolve', data: Capable }
   | { type: 'reject', error: Capable }

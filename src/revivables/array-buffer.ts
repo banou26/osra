@@ -4,6 +4,9 @@ import { BoxBase, boxBuffer, reviveBuffer } from './utils.js'
 
 export const type = 'arrayBuffer' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export const isType = (value: unknown): value is ArrayBuffer =>
   value instanceof ArrayBuffer
 

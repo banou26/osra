@@ -6,6 +6,9 @@ import { recursiveBox, recursiveRevive } from './index.js'
 
 export const type = 'map' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type BoxedMap<T extends Map<Capable, Capable> = Map<Capable, Capable>> =
   & BoxBaseType<typeof type>
   & { entries: Array<[Capable, Capable]> }

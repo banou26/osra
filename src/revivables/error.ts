@@ -6,6 +6,9 @@ import { recursiveBox, recursiveRevive } from './index.js'
 
 export const type = 'error' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type BoxedError =
   & BoxBaseType<typeof type>
   & {

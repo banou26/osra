@@ -52,6 +52,7 @@ const isClonable = (value: unknown): value is Clonable =>
 export const clonable = {
   type: 'clonable',
   capableOnly: true,
+  objectsOnly: true,
   isType: isClonable,
   // `revive` is never reached - `box` returns the raw value so isRevivableBox is false
   box: (value: Clonable, _context: RevivableContext<any>): Clonable => value,
@@ -86,6 +87,7 @@ const isTransferable = (value: unknown): value is Transferable =>
 export const transferable = {
   type: 'transferable',
   capableOnly: true,
+  objectsOnly: true,
   isType: isTransferable,
   box: (value: Transferable, _context: RevivableContext<any>): Transferable => value,
   revive: (value: BoxedTransferable, _context: RevivableContext<any>): Transferable => value as unknown as Transferable,
@@ -100,6 +102,7 @@ const isBlob = (value: unknown): value is Blob =>
 export const blob = {
   type: 'blob',
   capableOnly: true,
+  objectsOnly: true,
   isType: isBlob,
   box: (value: Blob, context: RevivableContext<any>): Blob => {
     if (isJsonOnlyTransport(context.transport)) {
@@ -137,6 +140,7 @@ const isUnclonableTyped = isUnclonable as (value: unknown) => value is never
 
 export const unclonable = {
   type: 'unclonable',
+  objectsOnly: true,
   isType: isUnclonableTyped,
   box: (_value: never, _context: RevivableContext<any>): BoxedUnclonable => ({ ...BoxBase, type: 'unclonable' }),
   revive: (_value: BoxedUnclonable, _context: RevivableContext<any>): Record<string, never> => ({}),

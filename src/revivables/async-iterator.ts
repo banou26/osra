@@ -6,6 +6,9 @@ import { box as boxFunction, revive as reviveFunction, BoxedFunction } from './f
 
 export const type = 'asyncIterator' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 type AnyAsyncIterable = { [Symbol.asyncIterator]: () => AsyncIterator<unknown> }
 
 export type BoxedAsyncIterator =

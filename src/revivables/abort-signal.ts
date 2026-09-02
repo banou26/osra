@@ -13,6 +13,9 @@ import {
 
 export const type = 'abortSignal' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 type AbortMessage = {
   type: 'abort'
   reason?: Capable

@@ -9,6 +9,7 @@ import {
   isWindow,
 } from '../../src/utils/type-guards'
 import { normalizeTransport } from '../../src/connections/utils'
+import { defaultRevivableModules } from '../../src/revivables/index'
 
 // Mimics a cross-origin WindowProxy: any non-whitelisted access, including the `in` operator, throws SecurityError
 const crossOriginWindowMock = (): Window => {
@@ -90,4 +91,25 @@ export const normalizeCrossOriginWindowEmitTransport = () => {
   const normalized = normalizeTransport({ receive: window, emit: win } as any) as any
   expect(normalized.isJson).to.equal(false)
   expect(normalized.emit).to.equal(win)
+}
+
+/** `objectsOnly` is a promise a module makes to the walker, which then skips it for every primitive
+ *  leaf. A module that breaks the promise would silently stop being offered its own values, so the
+ *  flag is checked against the real predicates rather than trusted. */
+export const objectsOnlyFlagsAreHonest = async () => {
+  const primitives: unknown[] = [
+    'hello', '', 0, -0, 42, NaN, Infinity, -Infinity, true, false,
+    undefined, null, 10n, Symbol('probe'), Symbol.for('probe'),
+  ]
+  const flagged = defaultRevivableModules.filter(module => 'objectsOnly' in module && module.objectsOnly)
+  expect(flagged.length, 'the default list should have object-only modules to check').to.be.greaterThan(20)
+
+  for (const module of flagged) {
+    for (const primitive of primitives) {
+      expect(
+        module.isType(primitive),
+        `${module.type} is flagged objectsOnly but claims ${String(primitive)}`,
+      ).to.equal(false)
+    }
+  }
 }

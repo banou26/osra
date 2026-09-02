@@ -18,6 +18,9 @@ import { onTeardown } from '../utils/teardown.js'
 
 export const type = 'messagePort' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type Messages =
   | { type: 'message', remoteUuid: Uuid, data: Capable, portId: Uuid, seq?: number }
   | { type: 'message-port-close', remoteUuid: Uuid, portId: Uuid, seq?: number }

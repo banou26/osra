@@ -6,6 +6,9 @@ import { box as boxReadableStream, revive as reviveReadableStream } from './read
 
 export const type = 'response' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export const isType = (value: unknown): value is Response =>
   value instanceof Response
 

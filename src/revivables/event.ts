@@ -6,6 +6,9 @@ import { recursiveBox, recursiveRevive } from './index.js'
 
 export const type = 'event' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 /** Boxes Event/CustomEvent only. Subclass-specific fields (MessageEvent.data,
  *  ErrorEvent.error, ProgressEvent.loaded, etc.) are dropped on the wire. */
 export type BoxedEvent =

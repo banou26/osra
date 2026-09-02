@@ -8,6 +8,9 @@ import { isTornDown, onTeardown } from '../utils/teardown.js'
 
 export const type = 'identity' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type Messages = {
   type: 'identity-dispose'
   remoteUuid: Uuid

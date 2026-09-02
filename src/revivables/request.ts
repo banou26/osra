@@ -7,6 +7,9 @@ import { box as boxAbortSignal, revive as reviveAbortSignal } from './abort-sign
 
 export const type = 'request' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export const isType = (value: unknown): value is Request =>
   value instanceof Request
 

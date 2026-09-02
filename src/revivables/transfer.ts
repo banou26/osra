@@ -7,6 +7,9 @@ import { recursiveBox, recursiveRevive } from './index.js'
 
 export const type = 'transfer' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 const TRANSFER_MARKER: unique symbol = Symbol.for('osra.transfer')
 
 type TransferWrapper<T = unknown> = {

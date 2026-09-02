@@ -10,6 +10,9 @@ import {
 
 export const type = 'typedArray' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 type BoxedTypedArray<T extends TypedArray, T2 extends RevivableContext> =
   & typeof BoxBase
   & { type: typeof type }

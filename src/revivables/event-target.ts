@@ -5,6 +5,9 @@ import { trackGc } from '../utils/gc-tracker.js'
 
 export const type = 'eventTarget' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 type ListenerOpts = boolean | { capture?: boolean, once?: boolean, passive?: boolean, signal?: AbortSignal }
 
 export const isType = (value: unknown): value is EventTarget => value instanceof EventTarget

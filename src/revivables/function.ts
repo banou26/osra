@@ -10,6 +10,9 @@ import { box as boxMessagePort, postPreBoxed, revive as reviveMessagePort, Boxed
 
 export const type = 'function' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 type ResultMessage =
   | { type: 'return', value: Capable }
   | { type: 'throw', error: Capable }

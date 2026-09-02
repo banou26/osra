@@ -6,6 +6,9 @@ import { recursiveBox, recursiveRevive } from './index.js'
 
 export const type = 'set' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type BoxedSet<T extends Set<Capable> = Set<Capable>> =
   & BoxBaseType<typeof type>
   & { values: Array<Capable> }

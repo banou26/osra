@@ -42,6 +42,12 @@ export type RevivableModule<
 > = {
   readonly type: T
   readonly isType: (value: unknown) => value is T2
+  /** Declare `true` when `isType` never claims a primitive (string, number, boolean, bigint, symbol,
+   *  undefined, null). The walker then skips the module for primitive leaves, which is most of what a
+   *  large payload is made of. Leaving it off is always safe: the default is to call `isType` for
+   *  every value, exactly as before. `objectsOnlyFlagsAreHonest` in the suite calls every flagged
+   *  module with a set of primitives and fails if one of them says yes. */
+  readonly objectsOnly?: boolean
   readonly box: ((value: T2, context: RevivableContext<any>) => T3) | ((...args: any[]) => any)
   readonly revive: (value: T3, context: RevivableContext<any>) => T2
   readonly init?: (context: RevivableContext<any>) => void
@@ -143,6 +149,18 @@ const settleBoxWalk = (failed: boolean) => {
 const isTrackable = (value: unknown): value is object =>
   value !== null && (typeof value === 'object' || typeof value === 'function')
 
+/** The modules that can claim a primitive, cached per module list. The list is built once per
+ *  connection, so this is one filter per connection rather than one per leaf. */
+const primitiveModules = new WeakMap<readonly RevivableModule[], readonly RevivableModule[]>()
+
+const modulesForPrimitives = (modules: readonly RevivableModule[]): readonly RevivableModule[] => {
+  const cached = primitiveModules.get(modules)
+  if (cached) return cached
+  const subset = modules.filter(module => !module.objectsOnly)
+  primitiveModules.set(modules, subset)
+  return subset
+}
+
 const boxDispatch = <
   T extends Capable,
   TModules extends readonly RevivableModule[]
@@ -152,7 +170,11 @@ const boxDispatch = <
   skipType?: string,
 ): DeepReplaceWithBox<T, TModules[number]> => {
   type ReturnCastType = DeepReplaceWithBox<T, TModules[number]>
-  const handledByModule = context.revivableModules.find(
+  // A primitive leaf cannot be claimed by a module that only handles objects, and a payload is mostly
+  // primitive leaves, so those walk a four-entry list instead of the whole one.
+  const primitiveLeaf = value === null || (typeof value !== 'object' && typeof value !== 'function')
+  const candidates = primitiveLeaf ? modulesForPrimitives(context.revivableModules) : context.revivableModules
+  const handledByModule = candidates.find(
     module => module.type !== skipType && module.isType(value)
   )
   if (handledByModule) {

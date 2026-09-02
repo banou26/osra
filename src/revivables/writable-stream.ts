@@ -12,6 +12,9 @@ import {
 
 export const type = 'writableStream' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 // outgoing wire shape revive -> box, one per call
 export type WriteContext =
   | { type: 'write', chunk: Capable }

@@ -13,6 +13,9 @@ import {
 
 export const type = 'readableStream' as const
 
+/** Never claims a primitive, so the walker can skip this module for primitive leaves. */
+export const objectsOnly = true
+
 export type PullContext =
   | { type: 'pull' }
   | { type: 'cancel', reason?: Capable }

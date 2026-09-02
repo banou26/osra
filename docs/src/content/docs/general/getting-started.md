@@ -50,8 +50,6 @@ Osra natively supports almost all of the types you'd encounter on the web platfo
 If you'd like to see every supported types, you can head over at the [supported types](/guides/supported-types/) page.
 
 
-## Todo: add more stuff in the getting started page.
-
 <!--
 ## Transports
 

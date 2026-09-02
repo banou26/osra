@@ -23,5 +23,8 @@ jobs:
       - run: npm run check-declaration-imports
       - run: npm run type-check
       - run: npm run check-consumer-types
+      # the same surface under an older TypeScript lib: shipped declarations must not name types
+      # that only newer libs declare (Float16ArrayConstructor did, and took the Capable checks with it)
+      - run: npm run check-consumer-types-legacy-lib
       - run: npm test
       # the extension suite needs a headed browser with a display, so it is intentionally not part of CI

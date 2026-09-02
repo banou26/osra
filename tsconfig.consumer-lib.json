@@ -1,0 +1,10 @@
+{
+  // The same consumer surface as tsconfig.consumer.json, under a deliberately conservative lib.
+  // osra's declarations must not depend on types that only newer TypeScript libs declare: naming
+  // `Float16ArrayConstructor` once put "Cannot find name" inside osra's own .d.ts for anyone not on
+  // the esnext lib, and took every check built on those types down with it.
+  "extends": "./tsconfig.consumer.json",
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "es2022"]
+  }
+}

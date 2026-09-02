@@ -13,8 +13,18 @@ import type {
 import { OSRA_KEY } from '../types.js'
 import { getWebExtensionRuntime } from './transport.js'
 
+/** Structural on purpose, never `typeof Float16Array`. That global type exists only in TypeScript's
+ *  esnext lib, and naming it here lands it in the SHIPPED declarations, where a consumer on an older
+ *  lib gets `Cannot find name 'Float16ArrayConstructor'` inside osra's own .d.ts, and every check
+ *  built on the collapsed types degrades with it. Same shape of break as the webextension-polyfill
+ *  import 0.6.6 and 0.6.7 shipped; `npm run check-consumer-types-legacy-lib` is the guard. */
+type Float16ArrayConstructorLike =
+  & (new (buffer: ArrayBufferLike, byteOffset?: number, length?: number) => ArrayBufferView & { readonly length: number })
+  & { readonly BYTES_PER_ELEMENT: number }
+
 // Pulled from globalThis so module evaluation does not crash on platforms that have not shipped Float16Array yet (Node <= 23, Chrome <= 134, Firefox <= 128)
-const Float16ArrayCtor = (globalThis as { Float16Array?: typeof Float16Array }).Float16Array
+const Float16ArrayCtor: Float16ArrayConstructorLike | undefined =
+  (globalThis as { Float16Array?: Float16ArrayConstructorLike }).Float16Array
 
 const typedArrayConstructorsByName = {
   Int8Array,

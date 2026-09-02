@@ -158,3 +158,15 @@ type _RemoteContainers = [
   // written into, not read out of: the chunks you write are local values
   Expect<Equals<Remote<WritableStream<() => number>>, WritableStream<() => number>>>,
 ]
+
+// An EventTarget subclass arrives as a listener-only façade, so Remote must not keep promising its
+// own members. MessagePort and AbortSignal are the exceptions: osra revives those as themselves.
+declare class Emitter extends EventTarget {
+  emit(): void
+}
+type _RemoteEventTargets = [
+  Expect<Equals<Remote<Emitter>, EventTarget>>,
+  Expect<Equals<Remote<EventTarget>, EventTarget>>,
+  Expect<Equals<Remote<MessagePort>, MessagePort>>,
+  Expect<Equals<Remote<AbortSignal>, AbortSignal>>,
+]

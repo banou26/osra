@@ -93,9 +93,13 @@ export type Remote<T> =
   : T extends
       | Date | Error | RegExp
       | ArrayBuffer | ArrayBufferView | Blob | File | FileList
-      | WritableStream | MessagePort | EventTarget
+      | WritableStream | MessagePort | AbortSignal
       | Request | Response | Headers
     ? T
+  // every OTHER EventTarget revives as a listener-only façade: the subclass fields and methods are
+  // gone, and dispatchEvent on this side reaches nothing, so claiming the subclass here would be a
+  // lie. MessagePort and AbortSignal are above because osra revives those as themselves
+  : T extends EventTarget ? EventTarget
   : T extends AsyncIterable<infer U> ? AsyncIterableIterator<Remote<U>>
   : T extends ReadonlyArray<unknown> ? { [K in keyof T]: Remote<T[K]> }
   : T extends object ? { [K in keyof T]: Remote<T[K]> }

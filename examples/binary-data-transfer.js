@@ -24,7 +24,7 @@ const api = {
     return out.buffer
   },
 
-  // Blobs revive on the receiving side as Promise<Blob>, so the receiver has to await them
+  // a Blob is structured-clonable, so it revives as a Blob on the other side, nothing to await
   makeReport: () => ({
     name: 'report.csv',
     blob: new Blob(['id,value\n1,255\n'], { type: 'text/csv' }),
@@ -75,9 +75,8 @@ const main = async () => {
   console.log(buffer.byteLength) // 3
 
   const report = await api.makeReport()
-  const blob = await report.blob
-  console.log(blob instanceof Blob, blob.type) // true 'text/csv'
-  console.log(await blob.text()) // 'id,value\n1,255\n'
+  console.log(report.blob instanceof Blob, report.blob.type) // true 'text/csv'
+  console.log(await report.blob.text()) // 'id,value\n1,255\n'
 
   const big = new ArrayBuffer(16 * 1024 * 1024)
   console.log(await api.byteLength(transfer(big))) // 16777216

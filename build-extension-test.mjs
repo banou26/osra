@@ -8,7 +8,9 @@ import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { Script } from 'node:vm'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const outDir = resolve(__dirname, 'build/extension-test')
+// build-test/, never build/: build/ is the publish root (files: ["build"]), and npm pack does not run
+// prepublishOnly's clean, so a stray extension bundle sitting there would ship
+const outDir = resolve(__dirname, 'build-test/extension-test')
 
 const buildEntry = (name, entry) =>
   viteBuild({

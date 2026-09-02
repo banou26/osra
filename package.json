@@ -36,7 +36,7 @@
   "scripts": {
     "build": "vp build && node ./node_modules/typescript7/bin/tsc --declaration --emitDeclarationOnly",
     "build-watch": "vp build --watch",
-    "clean": "rimraf build",
+    "clean": "node -e \"require('node:fs').rmSync('build', { recursive: true, force: true })\"",
     "prepublishOnly": "npm run clean && npm run build",
     "build-test": "vp build --config vite.test.config.ts",
     "build-test-watch": "vp build --config vite.test.config.ts --watch",
@@ -48,7 +48,7 @@
     "test-watch-headful": "nodemon --watch build-test --exec \"npx playwright test --headed\"",
     "test-with-coverage": "VITE_COVERAGE=true npm run build-test && VITE_COVERAGE=true npx playwright test && npm run print-coverage && npm run clean-coverage",
     "print-coverage": "npx nyc report",
-    "clean-coverage": "rimraf .nyc_output coverage",
+    "clean-coverage": "node -e \"for (const dir of ['.nyc_output', 'coverage']) require('node:fs').rmSync(dir, { recursive: true, force: true })\"",
     "type-check": "node ./node_modules/typescript7/bin/tsc --noEmit && node ./node_modules/typescript7/bin/tsc --noEmit -p tsconfig.tests.json",
     "start-server": "http-server -p 3000",
     "build-extension-test": "node build-extension-test.mjs",

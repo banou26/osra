@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url'
 import tests from './_tests_'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const extensionPath = path.join(__dirname, '../../build/extension-test')
+const extensionPath = path.join(__dirname, '../../build-test/extension-test')
 
 type TestObject = {
   [key: string]: TestObject | (() => any)

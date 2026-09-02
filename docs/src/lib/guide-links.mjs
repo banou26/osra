@@ -45,11 +45,11 @@ export const GUIDE_LINKS = {
   defaultRevivableModules: { route: '/guides/custom-revivables/', label: 'Custom revivables' },
   BoxBase: { route: '/guides/custom-revivables/', label: 'Custom revivables' },
 
-  CustomTransport: { route: '/guides/custom-transports/', label: 'Custom transports' },
-  CustomEmitTransport: { route: '/guides/custom-transports/', label: 'Custom transports' },
-  CustomReceiveTransport: { route: '/guides/custom-transports/', label: 'Custom transports' },
-  EmitHandler: { route: '/guides/custom-transports/', label: 'Custom transports' },
-  ReceiveHandler: { route: '/guides/custom-transports/', label: 'Custom transports' },
+  CustomTransport: { route: '/guides/custom-transports-and-relays/', label: 'Custom transports' },
+  CustomEmitTransport: { route: '/guides/custom-transports-and-relays/', label: 'Custom transports' },
+  CustomReceiveTransport: { route: '/guides/custom-transports-and-relays/', label: 'Custom transports' },
+  EmitHandler: { route: '/guides/custom-transports-and-relays/', label: 'Custom transports' },
+  ReceiveHandler: { route: '/guides/custom-transports-and-relays/', label: 'Custom transports' },
 
   Transport: { route: '/guides/transports/', label: 'Transports' },
   PlatformTransport: { route: '/guides/transports/', label: 'Transports' },

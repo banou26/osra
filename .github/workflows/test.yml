@@ -19,6 +19,8 @@ jobs:
       - run: npx playwright install --with-deps chromium firefox webkit
       # build before type-check: examples/ import 'osra' via the package self-reference
       - run: npm run build
+      # osra declares no dependencies, so a bare import in a shipped .d.ts is one the consumer cannot resolve
+      - run: npm run check-declaration-imports
       - run: npm run type-check
       - run: npm run check-consumer-types
       - run: npm test

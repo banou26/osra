@@ -6,10 +6,17 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Publish even when no green test run exists for this commit'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   id-token: write
+  # reading the test workflow's runs is how a manual dispatch proves it was gated
+  actions: read
 
 concurrency:
   group: publish
@@ -20,11 +27,27 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      publish: ${{ steps.version.outputs.publish }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           # publish exactly the commit the test run validated, not whatever main moved to since
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # A dispatch used to satisfy the gate by existing, so 0.6.6 went to npm 75 seconds before its
+      # suite finished. The button stays, it just has to point at a commit `test` already passed on.
+      - name: Require a green test run for this commit
+        if: github.event_name == 'workflow_dispatch' && inputs.force != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          green=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=${{ github.sha }}&status=completed" --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          echo "successful test runs for ${{ github.sha }}: ${green}"
+          if [ "$green" -lt 1 ]; then
+            echo "::error::no successful test run for this commit - wait for test, or dispatch again with force=true"
+            exit 1
+          fi
       # no registry-url here: setup-node would write an .npmrc auth line with a placeholder
       # NODE_AUTH_TOKEN, which makes npm skip the OIDC exchange trusted publishing needs
       - uses: actions/setup-node@v4
@@ -37,6 +60,7 @@ jobs:
         id: version
         run: |
           local_version=$(node -p "require('./package.json').version")
+          echo "version=${local_version}" >> "$GITHUB_OUTPUT"
           published=$(npm view "osra@${local_version}" version 2>/dev/null || true)
           if [ "$published" = "$local_version" ]; then
             echo "publish=no" >> "$GITHUB_OUTPUT"
@@ -50,3 +74,31 @@ jobs:
       # prepublishOnly runs clean + build, so this ships the freshly built package
       - if: steps.version.outputs.publish == 'yes'
         run: npm publish
+
+  # Separate job so the write scope lives only where a tag is created, never alongside npm publish.
+  release:
+    needs: publish
+    if: needs.publish.outputs.publish == 'yes'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          # --generate-notes diffs against the previous tag, which needs the history behind this one
+          fetch-depth: 0
+      - name: Tag the published commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ needs.publish.outputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists, nothing to do"
+            exit 0
+          fi
+          gh release create "$tag" \
+            --target "${{ github.event.workflow_run.head_sha || github.sha }}" \
+            --title "$tag" \
+            --generate-notes

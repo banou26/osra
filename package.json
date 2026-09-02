@@ -60,7 +60,8 @@
     "docs-preview": "npm run preview -w docs",
     "docs-gen-reference": "npm run gen:reference -w docs",
     "docs-check-links": "npm run check-links -w docs",
-    "docs-check-twoslash": "npm run check-twoslash -w docs"
+    "docs-check-twoslash": "npm run check-twoslash -w docs",
+    "docs-check-html": "npm run check-html -w docs"
   },
   "devDependencies": {
     "@istanbuljs/nyc-config-typescript": "^1.0.2",

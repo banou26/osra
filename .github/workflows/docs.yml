@@ -1,0 +1,28 @@
+name: docs
+
+# Separate from `test` on purpose: publish.yml keys its gate on `workflow_run: workflows: [test]`,
+# so folding these steps into that workflow would put the docs in the release path.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # a twoslash block that stops compiling does NOT fail the astro build, it drops the whole page
+      # body, so this is what keeps a blank page from deploying. It compiles the examples against the
+      # PUBLISHED osra the docs workspace depends on, which makes it a drift gate too
+      - run: npm run docs-check-twoslash
+      - run: npm run docs-check-links
+      # the reference pages under docs/src/content/docs/api are generated from src/ by the prebuild hook
+      - run: npm run docs-build
+      - run: npm run docs-check-html

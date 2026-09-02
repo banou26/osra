@@ -12,14 +12,15 @@
     "prepreview": "npm run gen:reference",
     "preview": "astro preview",
     "check-links": "node scripts/check-links.mjs src/content/docs --route-base /",
-    "check-twoslash": "node scripts/check-twoslash.mjs"
+    "check-twoslash": "node scripts/check-twoslash.mjs",
+    "check-html": "node scripts/check-html.mjs dist"
   },
   "dependencies": {
     "@astrojs/markdown-satteri": "^0.3.4",
     "@astrojs/starlight": "^0.41.1",
     "@fontsource-variable/inter": "^5.2.8",
     "astro": "^7.0.2",
-    "osra": "^0.6.3",
+    "osra": "^0.6.7",
     "sharp": "^0.35.0"
   },
   "devDependencies": {

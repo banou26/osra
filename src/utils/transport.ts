@@ -1,9 +1,8 @@
-import type { Browser } from 'webextension-polyfill'
 import type { Message} from '../types.js'
 import type {
-  WebExtOnConnect, WebExtOnMessage,
+  WebExtGlobal, WebExtOnConnect, WebExtOnMessage,
   WebExtPort, WebExtRuntime, WebExtSender
-} from './type-guards.js'
+} from './webext-types.js'
 
 import { OSRA_DEFAULT_KEY, OSRA_KEY } from '../types.js'
 import {
@@ -108,9 +107,11 @@ export type Transport =
   | PlatformTransport
   | CustomTransport
 
-// Typed via the shipped webextension-polyfill module types - referencing the ambient `browser`/`chrome` globals here would leak unresolvable names into the published .d.ts
-type WebExtGlobals = { browser?: Browser, chrome?: Browser }
-export const getWebExtensionGlobal = (): Browser | undefined =>
+// Structural shapes from ./webext-types, never the polyfill's own module types: an import of those
+// would land in the published .d.ts, where the consumer may have nothing to resolve it to. Naming the
+// ambient `browser`/`chrome` globals here would leak unresolvable names the same way.
+type WebExtGlobals = { browser?: WebExtGlobal, chrome?: WebExtGlobal }
+export const getWebExtensionGlobal = (): WebExtGlobal | undefined =>
   (globalThis as unknown as WebExtGlobals).browser ?? (globalThis as unknown as WebExtGlobals).chrome
 export const getWebExtensionRuntime = () => getWebExtensionGlobal()?.runtime
 

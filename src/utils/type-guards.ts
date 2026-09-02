@@ -1,4 +1,3 @@
-import type { Runtime } from 'webextension-polyfill'
 import type { Message } from '../types.js'
 import type {
   CustomEmitTransport, CustomReceiveTransport,
@@ -7,11 +6,14 @@ import type {
   ReceiveJsonPlatformTransport,
   ReceiveTransport, Transport
 } from './transport.js'
+import type {
+  WebExtOnConnect, WebExtOnMessage, WebExtPort, WebExtRuntime, WebExtSender
+} from './webext-types.js'
 
 import { OSRA_KEY } from '../types.js'
 import { getWebExtensionRuntime } from './transport.js'
 
-// Pulled from globalThis so module evaluation doesn't crash on platforms that haven't shipped Float16Array yet (Node ≤ 23, Chrome ≤ 134, Firefox ≤ 132)
+// Pulled from globalThis so module evaluation does not crash on platforms that have not shipped Float16Array yet (Node <= 23, Chrome <= 134, Firefox <= 128)
 const Float16ArrayCtor = (globalThis as { Float16Array?: typeof Float16Array }).Float16Array
 
 const typedArrayConstructorsByName = {
@@ -109,14 +111,14 @@ export const isTransferable = (value: unknown): value is Transferable =>
     (globalThis as { WebTransportSendStream?: abstract new (...args: any[]) => unknown }).WebTransportSendStream,
   ])
 
-export type WebExtRuntime = Runtime.Static
+export type { WebExtRuntime, WebExtPort, WebExtSender, WebExtOnConnect, WebExtOnMessage, WebExtEvent, WebExtGlobal } from './webext-types.js'
+
 export const isWebExtensionRuntime = (value: unknown): value is WebExtRuntime => {
   const runtime = getWebExtensionRuntime()
   if (!runtime) return false
   return value === runtime
 }
 
-export type WebExtPort = ReturnType<WebExtRuntime['connect']> | Runtime.Port
 export const isWebExtensionPort = (value: unknown, connectPort: boolean = false): value is WebExtPort => {
   if (!value || typeof value !== 'object') return false
   // prevents a SecurityError when `value` is a cross-origin window - the property probes below would throw; no test covers this guard (the cross-origin tests only cover isJsonOnlyTransport and normalizeTransport), so it reads as dead code
@@ -125,8 +127,6 @@ export const isWebExtensionPort = (value: unknown, connectPort: boolean = false)
   if (!connectPort) return true
   return 'sender' in value && 'onMessage' in value && 'onDisconnect' in value
 }
-
-export type WebExtSender = NonNullable<WebExtPort['sender']>
 
 const hasListenerApi = (value: unknown): boolean =>
   !!value
@@ -137,14 +137,12 @@ const hasListenerApi = (value: unknown): boolean =>
   && 'removeListener' in value
 
 // Identity-compare against runtime.onConnect - structural checks can't distinguish onConnect from onMessage, which share the exact same shape
-export type WebExtOnConnect = WebExtRuntime['onConnect']
 export const isWebExtensionOnConnect = (value: unknown): value is WebExtOnConnect => {
   const runtime = getWebExtensionRuntime()
   if (!runtime) return false
   return value === runtime.onConnect || value === runtime.onConnectExternal
 }
 
-export type WebExtOnMessage = WebExtRuntime['onMessage']
 export const isWebExtensionOnMessage = (value: unknown): value is WebExtOnMessage =>
   hasListenerApi(value)
 

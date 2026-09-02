@@ -54,6 +54,7 @@
     "build-extension-test": "node build-extension-test.mjs",
     "test-extension": "npm run build-extension-test && npx playwright test -c playwright.extension.config.ts",
     "check-consumer-types": "npm run build && node ./node_modules/typescript7/bin/tsc --noEmit -p tsconfig.consumer.json",
+    "check-declaration-imports": "node scripts/check-declaration-imports.mjs",
     "docs-dev": "npm run dev -w docs",
     "docs-build": "npm run build -w docs",
     "docs-preview": "npm run preview -w docs",

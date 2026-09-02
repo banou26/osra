@@ -54,7 +54,7 @@ export const typedArrayTypeToTypedArrayConstructor = (value: TypedArrayType): Ty
 }
 
 export const isTypedArray = (value: unknown): value is TypedArray =>
-  typedArrayConstructors.some(ctor => !!ctor && value instanceof ctor)
+  instanceOfAny(value, typedArrayConstructors)
 export const isWebSocket = (value: unknown): value is WebSocket => value instanceof WebSocket
 export const isServiceWorkerContainer = (value: unknown): value is ServiceWorkerContainer => !!globalThis.ServiceWorkerContainer && value instanceof ServiceWorkerContainer
 export const isServiceWorker = (value: unknown): value is ServiceWorker => !!globalThis.ServiceWorker && value instanceof ServiceWorker
@@ -81,6 +81,10 @@ type AnyConstructor = abstract new (...args: any[]) => unknown
 /** True if `value` is an instance of any of the given constructors.
  *  Tolerates undefined entries (constructors missing on this platform). */
 export const instanceOfAny = (value: unknown, ctors: readonly (AnyConstructor | undefined)[]): boolean => {
+  // `instanceof` is false for every primitive by definition, and this runs on every leaf of every
+  // boxed value, several times over, so the walk should not pay for a dozen prototype lookups to
+  // learn that a string is not an ImageBitmap.
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return false
   for (const ctor of ctors) if (ctor && value instanceof ctor) return true
   return false
 }

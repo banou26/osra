@@ -162,7 +162,45 @@ export const identityDropReleasesThePeersPin = async (transport: Transport) => {
   expect(receivedRef.deref(), 'revived identity should be released once the origin drops its value').to.equal(undefined)
 }
 
+/** The chain unwinds from the origin outward: the middle context holds its value only while the
+ *  origin holds its own, and the far end holds its own only while the middle does. Each assertion is
+ *  paired with the control that the value is still there before the drop it is waiting on. */
+const identityChainUnwindsFromTheOrigin = async (_transport: Transport) => {
+  const a = new MessageChannel()
+  const b = new MessageChannel()
+
+  let origin: { tag: string } | undefined = { tag: 'origin' }
+  const originApi = { get: async () => identity(origin!) }
+  expose(originApi, { transport: a.port1 })
+
+  const upstream = await expose<typeof originApi>({}, { transport: a.port2 })
+  const middleHeld: { value?: unknown } = {}
+  const middleApi = { get: async () => (middleHeld.value = await upstream.get()) as { tag: string } }
+  expose(middleApi, { transport: b.port1 })
+
+  const farEnd = await expose<typeof middleApi>({}, { transport: b.port2 })
+  const farHeld: { value?: unknown } = { value: await farEnd.get() }
+
+  const middleRef = new WeakRef(middleHeld.value as object)
+  const farRef = new WeakRef(farHeld.value as object)
+  expect(middleRef.deref(), 'the middle context revived a value').to.not.equal(undefined)
+  expect(farRef.deref(), 'the far end revived a value').to.not.equal(undefined)
+
+  // nothing in user code holds either of them any more, but both pins do
+  middleHeld.value = undefined
+  farHeld.value = undefined
+  await __osraForceGc()
+  expect(middleRef.deref(), 'the middle value is pinned while the origin holds its own').to.not.equal(undefined)
+  expect(farRef.deref(), 'the far value is pinned while the middle holds its own').to.not.equal(undefined)
+
+  origin = undefined
+  await __osraForceGc()
+  expect(middleRef.deref(), 'the middle pin is released when the origin drops its value').to.equal(undefined)
+  expect(farRef.deref(), 'the far pin is released when the middle value goes with it').to.equal(undefined)
+}
+
 export const gc = {
+  identityChainUnwindsFromTheOrigin,
   identityDropReleasesThePeersPin,
   gcBracketCollectsUnreferencedObject,
   revivedEventTargetDroppedWithoutListenerIsCollected,

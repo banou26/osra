@@ -2,7 +2,7 @@ import type { Transport } from '../../src'
 
 import { expect } from 'chai'
 
-import { expose } from '../../src/index'
+import { expose, identity } from '../../src/index'
 import { EventChannel, EventPort } from '../../src/utils/event-channel'
 
 // wired up by the spec runner via page.exposeFunction, and waits for FinalizationRegistry callbacks
@@ -143,7 +143,27 @@ export const revivedPortDropSendsCloseToBoxSide = async (transport: Transport) =
   await expect(remote.ping()).to.eventually.equal('pong')
 }
 
+/** The peer holds a revived identity until the origin drops its own reference: the first assertion
+ *  is the control, it proves the WeakRef can still see the value while the pin is in place. */
+export const identityDropReleasesThePeersPin = async (transport: Transport) => {
+  let held: { a: number } | undefined = { a: 1 }
+  const value = { get: async () => identity(held!) }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  const holder: { received?: unknown } = { received: await remote.get() }
+  const receivedRef = new WeakRef(holder.received as object)
+  holder.received = undefined
+  await __osraForceGc()
+  expect(receivedRef.deref(), 'revived identity should be held while the origin still has its value').to.not.equal(undefined)
+
+  held = undefined
+  await __osraForceGc()
+  expect(receivedRef.deref(), 'revived identity should be released once the origin drops its value').to.equal(undefined)
+}
+
 export const gc = {
+  identityDropReleasesThePeersPin,
   gcBracketCollectsUnreferencedObject,
   revivedEventTargetDroppedWithoutListenerIsCollected,
   revivedFunctionDroppedIsCollected,

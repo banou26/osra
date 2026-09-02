@@ -3,8 +3,8 @@ import type { RevivableContext, BoxBase as BoxBaseType } from './utils.js'
 import type { UnderlyingType } from '../utils/type.js'
 
 import { BoxBase } from './utils.js'
-import { recursiveBox, recursiveRevive } from './index.js'
-import { onTeardown } from '../utils/teardown.js'
+import { boxClaimedValue, recursiveRevive } from './index.js'
+import { isTornDown, onTeardown } from '../utils/teardown.js'
 
 export const type = 'identity' as const
 
@@ -18,10 +18,10 @@ export declare const Messages: Messages
 
 const IDENTITY_MARKER: unique symbol = Symbol.for('osra.identity')
 
-type IdentityWrapper<T = unknown> = {
-  readonly [IDENTITY_MARKER]: true
-  readonly value: T
-}
+/** Phantom shape. A tracked value carries no marker of its own, the mark lives in a WeakMap, so
+ *  this is what `isType` declares instead: matching it at the type level would widen `Capable` to
+ *  every object, and nothing a user writes structurally matches this. */
+type IdentityMarked = { readonly [IDENTITY_MARKER]: true }
 
 export type BoxedIdentity<T extends Capable = Capable> = BoxBaseType<typeof type> & {
   id: string
@@ -42,37 +42,39 @@ const isWeakKeyable = (value: unknown): value is WeakKey => {
   return false
 }
 
-const isIdentityWrapper = (value: unknown): value is IdentityWrapper =>
-  isObjectOrFunction(value) && IDENTITY_MARKER in value && value[IDENTITY_MARKER] === true
+/** Reference to id, for the whole realm rather than one connection. The id is minted once, wherever
+ *  the reference first became an identity - `identity()` here, or reviving one from a peer - and
+ *  from then on it travels with the value onto every connection it is sent over. That is what makes
+ *  a value keep its identity down a chain of contexts: each hop hands the same id to the next, so
+ *  the value coming back resolves to what that hop handed out, all the way to the origin. */
+const valueToId = new WeakMap<WeakKey, string>()
 
-const wrapperMemo = new WeakMap<object, IdentityWrapper>()
-
-const wrap = (value: object): IdentityWrapper => {
-  if (isIdentityWrapper(value)) return value
-  const cached = wrapperMemo.get(value)
-  if (cached) return cached
-  const wrapper: IdentityWrapper = { [IDENTITY_MARKER]: true, value }
-  wrapperMemo.set(value, wrapper)
-  return wrapper
+const idFor = (value: WeakKey): string => {
+  const existing = valueToId.get(value)
+  if (existing !== undefined) return existing
+  const id = globalThis.crypto.randomUUID()
+  valueToId.set(value, id)
+  return id
 }
 
-/** Wrap a value so osra preserves reference identity across the RPC
- *  boundary. Idempotent; primitives pass through unchanged. Lies at the
- *  type level - runtime value is an IdentityWrapper<T> typed as T. */
-export const identity = <T>(value: T): T =>
-  (isObjectOrFunction(value) ? wrap(value) : value) as T
+/** Mark a value so osra preserves its reference identity across the boundary. The peer's revived
+ *  value stands for this one, and handing it back - to you, or onward to a further context and back
+ *  again - resolves to this very reference. The mark sticks to the value, so only the side that
+ *  owns it has to opt in. Idempotent, and primitives pass through unchanged. */
+export const identity = <T>(value: T): T => {
+  if (isObjectOrFunction(value)) idFor(value)
+  return value
+}
 
 type IdentityState = {
-  readonly sendIds: WeakMap<WeakKey, string>
-  /** id → ref to the value we sent, so a round-trip resolves to the
-   *  original reference instead of building a fresh proxy. */
-  readonly idToSent: Map<string, WeakRef<WeakKey>>
-  readonly sendRegistry: FinalizationRegistry<string>
-  readonly receiveCache: Map<string, unknown>
-  /** Revived value → id, so user code passing a revived value back to
-   *  its origin replays the peer's id and short-circuits to the real ref. */
-  readonly revivedToId: WeakMap<WeakKey, string>
-  listenerInstalled: boolean
+  /** Every id that has crossed this connection, either way, mapped to what it denotes on this side.
+   *  `has` doubles as "the peer can resolve this id", which is what lets a resend skip the payload.
+   *  Weak, because an entry outliving its value would resolve to nothing anyway. */
+  readonly idToLocal: Map<string, WeakRef<WeakKey>>
+  /** Values revived from this peer, held until the peer says its own reference is gone: it can send
+   *  the bare id at any time and expects this exact value back. */
+  readonly pins: Map<string, unknown>
+  readonly disposeRegistry: FinalizationRegistry<string>
 }
 
 const connectionStates = new WeakMap<RevivableContext, IdentityState>()
@@ -80,117 +82,104 @@ const connectionStates = new WeakMap<RevivableContext, IdentityState>()
 const getOrCreateState = (context: RevivableContext): IdentityState => {
   const existing = connectionStates.get(context)
   if (existing) return existing
-  const sendIds = new WeakMap<WeakKey, string>()
-  const idToSent = new Map<string, WeakRef<WeakKey>>()
-  const receiveCache = new Map<string, unknown>()
-  const revivedToId = new WeakMap<WeakKey, string>()
-  const sendRegistry = new FinalizationRegistry<string>((id) => {
-    idToSent.delete(id)
+  const idToLocal = new Map<string, WeakRef<WeakKey>>()
+  const pins = new Map<string, unknown>()
+  const disposeRegistry = new FinalizationRegistry<string>((id) => {
+    idToLocal.delete(id)
+    if (isTornDown(context)) return
     try {
       context.sendMessage({ type: 'identity-dispose', remoteUuid: context.remoteUuid, id })
     } catch { /* connection already closed */ }
   })
-  const state: IdentityState = {
-    sendIds, idToSent, sendRegistry, receiveCache, revivedToId,
-    listenerInstalled: false,
-  }
+  const state: IdentityState = { idToLocal, pins, disposeRegistry }
   connectionStates.set(context, state)
-  installReceiveListener(context, state)
+  context.eventTarget.addEventListener('message', ({ detail }) => {
+    if (detail?.type !== 'identity-dispose') return
+    state.pins.delete(detail.id)
+    // Dropped too, not just unpinned: the peer's reference is gone, so a later send of our own value
+    // has to carry the payload again instead of a bare id nothing over there could resolve.
+    state.idToLocal.delete(detail.id)
+  })
   onTeardown(context, () => {
-    state.receiveCache.clear()
-    state.idToSent.clear()
+    state.pins.clear()
+    state.idToLocal.clear()
   })
   return state
 }
 
-const installReceiveListener = (context: RevivableContext, state: IdentityState) => {
-  if (state.listenerInstalled) return
-  state.listenerInstalled = true
-  context.eventTarget.addEventListener('message', ({ detail }) => {
-    if (detail?.type !== 'identity-dispose') return
-    const revived = state.receiveCache.get(detail.id)
-    state.receiveCache.delete(detail.id)
-    if (revived !== undefined && isWeakKeyable(revived)) state.revivedToId.delete(revived)
-  })
-}
+export const isType = (value: unknown): value is IdentityMarked =>
+  isObjectOrFunction(value) && valueToId.has(value)
 
-export const isType = (value: unknown): value is IdentityWrapper =>
-  isIdentityWrapper(value)
-
-/** Look up or assign the id for a referenceable value. Returns whether
- *  the id is already-known (resend or round-trip) so the caller can skip
- *  shipping the inner payload. */
-const registerForReference = (
+/** The shared tail of both box paths: hand the peer the id alone when it can already resolve it,
+ *  and otherwise the id plus the payload, remembering that this peer now knows it. */
+const boxTracked = (
   value: WeakKey,
+  buildInner: () => Capable,
   state: IdentityState,
-): { id: string, isExisting: boolean } => {
-  const existingId = state.sendIds.get(value)
-  if (existingId !== undefined) return { id: existingId, isExisting: true }
-  const receivedId = state.revivedToId.get(value)
-  if (receivedId !== undefined) return { id: receivedId, isExisting: true }
-  const id = globalThis.crypto.randomUUID()
-  state.sendIds.set(value, id)
-  state.idToSent.set(id, new WeakRef(value))
-  state.sendRegistry.register(value, id)
-  return { id, isExisting: false }
+): BoxedIdentity => {
+  const id = idFor(value)
+  if (state.idToLocal.has(id)) return { ...BoxBase, type, id } as BoxedIdentity
+  // Before recording the id, so a value containing itself still hits the cycle guard rather than
+  // shipping a self-reference the peer could never revive.
+  const inner = buildInner()
+  state.idToLocal.set(id, new WeakRef(value))
+  // The peer holds its revived value until we tell it this one is gone.
+  state.disposeRegistry.register(value, id)
+  return { ...BoxBase, type, id, inner } as BoxedIdentity
 }
 
 export const box = <T extends Capable, TContext extends RevivableContext>(
-  wrapper: IdentityWrapper<T>,
+  value: T,
   context: TContext,
 ): BoxedIdentity<T> => {
   const state = getOrCreateState(context)
-  const inner = wrapper.value
-  const innerBox = recursiveBox(inner, context)
-  if (!isWeakKeyable(inner)) {
-    return { ...BoxBase, type, id: globalThis.crypto.randomUUID(), inner: innerBox } as BoxedIdentity<T>
+  const buildInner = () => boxClaimedValue(value, context, type) as Capable
+  if (!isWeakKeyable(value)) {
+    return { ...BoxBase, type, id: globalThis.crypto.randomUUID(), inner: buildInner() } as BoxedIdentity<T>
   }
-  const { id, isExisting } = registerForReference(inner, state)
-  if (isExisting) return { ...BoxBase, type, id } as BoxedIdentity<T>
-  return { ...BoxBase, type, id, inner: innerBox } as BoxedIdentity<T>
+  return boxTracked(value, buildInner, state) as BoxedIdentity<T>
 }
 
-/** Identity-box a referenceable value with a caller-supplied inner box,
- *  bypassing the recursive-box step. Used by revivables (symbol with
- *  description=undefined) where recursing back through their own box
+/** Identity-box a referenceable value with a caller-supplied inner box, bypassing the walker. Used
+ *  by revivables (symbol with description=undefined) where recursing back through their own box
  *  would loop into this module again. */
 export const boxByReference = <T extends WeakKey, TContext extends RevivableContext>(
   value: T,
   innerBox: Capable,
   context: TContext,
-): BoxedIdentity => {
-  const state = getOrCreateState(context)
-  const { id, isExisting } = registerForReference(value, state)
-  if (isExisting) return { ...BoxBase, type, id } as BoxedIdentity
-  return { ...BoxBase, type, id, inner: innerBox } as BoxedIdentity
-}
+): BoxedIdentity =>
+  boxTracked(value, () => innerBox, getOrCreateState(context))
 
 export const revive = <T extends BoxedIdentity, TContext extends RevivableContext>(
   value: T,
   context: TContext,
 ): T[UnderlyingType] => {
   const state = getOrCreateState(context)
-  const cached = state.receiveCache.get(value.id)
-  if (cached !== undefined) return cached as T[UnderlyingType]
-  const originated = state.idToSent.get(value.id)?.deref()
-  if (originated !== undefined) return originated as T[UnderlyingType]
+  if (state.pins.has(value.id)) return state.pins.get(value.id) as T[UnderlyingType]
+  const known = state.idToLocal.get(value.id)?.deref()
+  if (known !== undefined) return known as T[UnderlyingType]
   if (!('inner' in value) || value.inner === undefined) {
-    throw new Error(`osra identity: received id=${value.id} with no inner payload and no cached value`)
+    throw new Error(`osra identity: received id=${value.id} with no inner payload and nothing local to resolve it to`)
   }
   const revived = recursiveRevive(value.inner, context)
-  state.receiveCache.set(value.id, revived)
-  if (isWeakKeyable(revived)) state.revivedToId.set(revived, value.id)
+  state.pins.set(value.id, revived)
+  if (isWeakKeyable(revived)) {
+    // Carries the id onward: sending this value to a further context sends it under the same id, so
+    // whatever comes back through the chain lands on this very value again.
+    if (!valueToId.has(revived)) valueToId.set(revived, value.id)
+    state.idToLocal.set(value.id, new WeakRef(revived))
+  }
   return revived as T[UnderlyingType]
 }
 
 const typeCheck = () => {
   const fn = () => 42
-  const wrapper = { [IDENTITY_MARKER]: true, value: fn } as IdentityWrapper<typeof fn>
-  const boxed = box(wrapper, {} as RevivableContext)
+  const boxed = box(fn, {} as RevivableContext)
   const revived = revive(boxed, {} as RevivableContext)
   const expected: typeof fn = revived
   // @ts-expect-error - revived is the original function type, not string
   const notExpected: string = revived
-  // @ts-expect-error - cannot box a non-Capable wrapper (WeakMap not assignable)
-  box({ [IDENTITY_MARKER]: true, value: new WeakMap() } as IdentityWrapper<WeakMap<object, string>>, {} as RevivableContext)
+  // @ts-expect-error - cannot box a non-Capable value (WeakMap not assignable)
+  box(new WeakMap<object, string>(), {} as RevivableContext)
+  const marked: typeof fn = identity(fn)
 }

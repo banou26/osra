@@ -86,12 +86,6 @@ export const defaultRevivableModules = [
 export type DefaultRevivableModules = typeof defaultRevivableModules
 export type DefaultRevivableModule = DefaultRevivableModules[number]
 
-const findBoxModule = (
-  value: unknown,
-  modules: readonly RevivableModule[]
-): RevivableModule | undefined =>
-  modules.find(module => module.isType(value))
-
 const findReviveModule = (
   value: BoxBase,
   modules: readonly RevivableModule[],
@@ -120,6 +114,24 @@ const revivePath = new WeakSet<object>()
 const isTrackable = (value: unknown): value is object =>
   value !== null && (typeof value === 'object' || typeof value === 'function')
 
+const boxDispatch = <
+  T extends Capable,
+  TModules extends readonly RevivableModule[]
+>(
+  value: T,
+  context: RevivableContext<TModules>,
+  skipType?: string,
+): DeepReplaceWithBox<T, TModules[number]> => {
+  type ReturnCastType = DeepReplaceWithBox<T, TModules[number]>
+  const handledByModule = context.revivableModules.find(
+    module => module.type !== skipType && module.isType(value)
+  )
+  if (handledByModule) {
+    return handledByModule.box(value, context) as ReturnCastType
+  }
+  return descend<ReturnCastType>(value, v => recursiveBox(v, context))
+}
+
 export const recursiveBox = <
   T extends Capable,
   TModules extends readonly RevivableModule[]
@@ -137,15 +149,27 @@ export const recursiveBox = <
     boxPath.add(value)
   }
   try {
-    const handledByModule = findBoxModule(value, context.revivableModules)
-    if (handledByModule) {
-      return handledByModule.box(value, context) as ReturnCastType
-    }
-    return descend<ReturnCastType>(value, v => recursiveBox(v, context))
+    return boxDispatch(value, context)
   } finally {
     if (track) boxPath.delete(value)
   }
 }
+
+/** Box a value your own module claimed in place: every other module gets its turn and children are
+ *  walked as usual, but `claimedBy` is skipped, and the cycle guard the caller's `recursiveBox`
+ *  frame already holds for this value is not re-entered.
+ *  A module needs this when its `isType` matches a bare value rather than a wrapper around one, the
+ *  way `identity()` marks a reference in place: `recursiveBox` on that same value would come
+ *  straight back to the module, and the guard would report it as a cycle. */
+export const boxClaimedValue = <
+  T extends Capable,
+  TModules extends readonly RevivableModule[]
+>(
+  value: T,
+  context: RevivableContext<TModules>,
+  claimedBy: string,
+): DeepReplaceWithBox<T, TModules[number]> =>
+  boxDispatch(value, context, claimedBy)
 
 export const recursiveRevive = <
   T extends Capable,

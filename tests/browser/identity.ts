@@ -177,3 +177,67 @@ export const roundTripDistinctObjectsStayDistinct = async (transport: Transport)
   expect(echoed2).to.equal(obj2)
   expect(echoed1).to.not.equal(echoed2)
 }
+
+export const revivedValueIsNotTheOriginal = async (transport: Transport) => {
+  const obj = { a: 1 }
+  const value = { get: async () => identity(obj) }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  const received = await remote.get()
+  expect(received).to.not.equal(obj)
+  expect(received.a).to.equal(1)
+}
+
+export const returnedValueSentBackUnwrappedResolvesToOriginal = async (transport: Transport) => {
+  const obj = { a: 1 }
+  const value = {
+    get: async () => identity(obj),
+    isOriginal: async (received: { a: number }) => received === obj,
+  }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  const received = await remote.get()
+  expect(await remote.isOriginal(received)).to.equal(true)
+}
+
+export const argumentSentBackUnwrappedResolvesToOriginal = async (transport: Transport) => {
+  let held: (() => number) | undefined
+  const value = {
+    hold: async (fn: () => number) => { held = fn },
+    handBack: async (): Promise<() => number> => held!,
+  }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  const fn = () => 42
+  await remote.hold(identity(fn))
+  expect(await remote.handBack()).to.equal(fn)
+}
+
+export const resendDoesNotReboxTheValue = async (transport: Transport) => {
+  let reads = 0
+  const obj = {
+    get a() { reads++; return 1 },
+  }
+  const value = { take: async (received: { a: number }) => received.a }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  await remote.take(identity(obj))
+  const afterFirst = reads
+  await remote.take(identity(obj))
+  expect(reads).to.equal(afterFirst)
+}
+
+export const markedValueIsOneReferenceEvenWhenSentUnmarked = async (transport: Transport) => {
+  const plain = { foo: 'bar' }
+  const shared = { foo: 'bar' }
+  const value = { plain1: plain, plain2: plain, ref1: identity(shared), ref2: shared }
+  expose(value, { transport })
+  const remote = await expose<typeof value>({}, { transport })
+
+  expect(remote.plain1).to.not.equal(remote.plain2)
+  expect(remote.ref1).to.equal(remote.ref2)
+}

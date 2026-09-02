@@ -167,6 +167,9 @@ const result = {
 Fields holding plain JSON data (strings, numbers, booleans, and arrays or plain objects of those) can stay raw, they survive any transport as they are.\
 On a structured transport other clonables happen to survive raw too, but on a [JSON transport](/guides/transport-modes/) a raw `Date` field would silently turn into a string, so going through `recursiveBox` is what keeps a module correct on both modes.
 
+One thing to note is that a module claiming a value in place, rather than a wrapper around one, needs [`boxClaimedValue(value, context, yourType)`](/reference/low-level/#boxing) for its payload instead.\
+It walks the value through every other module while skipping yours, which `recursiveBox` on that same value would hand straight back to you. `identity()` is the built-in example, since it marks a reference rather than wrapping it.
+
 ## The context
 
 Both `box` and `revive` receive the connection's context as their second argument:

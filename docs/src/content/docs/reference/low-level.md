@@ -180,6 +180,7 @@ A few behaviors worth knowing about:
 - An already boxed value passes through `recursiveBox` untouched, so boxing a field twice is safe.
 - Both walkers throw a `TypeError` on circular structures, which is why `expose()`'s promise can reject with one.
 - For binary fields there is `boxBuffer(buffer, context)` and `reviveBuffer(boxed)`, the same pair osra's own modules use: a raw `ArrayBuffer` on structured transports, base64 on JSON ones.
+- `boxClaimedValue(value, context, yourType)` is for the rarer module that claims a bare value rather than a wrapper around one, the way `identity()` marks a reference in place. It boxes the value through every other module and walks its children as usual, skipping your own module and the cycle guard the walker already holds for that value, both of which `recursiveBox` on the same value would trip.
 
 The default module list is also exported as `defaultRevivableModules`, though the `revivableModules` option already hands it to you, so you rarely need the export itself.
 

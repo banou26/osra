@@ -70,7 +70,7 @@ This means that events the source fires before your `addEventListener` call land
 More detail in [supported types](/guides/supported-types/#eventtarget).
 
 Also keep in mind that osra walks your value as a tree, not a graph.\
-An object appearing in two places arrives as two independent copies, and when a single shared reference matters, wrap it in [`identity()`](/guides/identity-and-transfer/#identity).\
+An object appearing in two places arrives as two independent copies, and when a single shared reference matters, mark it with [`identity()`](/guides/identity-and-transfer/#identity).\
 A structure that contains itself is a real cycle though, and fails at send time with a `TypeError` telling you to break the cycle, while one arriving from a peer fails on receive with `TypeError('osra: cannot revive a circular structure')`.
 
 Note: a typed array view covering only part of its buffer has that window copied out before sending, so only a view covering its whole buffer can be moved without a copy, see [supported types](/guides/supported-types/#typed-arrays).

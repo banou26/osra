@@ -97,7 +97,7 @@ Three things clean up after themselves.
 
 **Ports.** Closing one tells the peer, which closes its end. A `FinalizationRegistry` is the backstop for a port nobody bothered to close, with the cleanup built in its own scope so it cannot accidentally hold a reference to the thing it is waiting to see collected.
 
-**Identities and façades.** When a value sent with `identity()` is collected, its owner sends `identity-dispose` so the peer drops its cached copy. When an `EventTarget` façade is collected, one call removes every listener it registered on the source.
+**Identities and façades.** When a value sent with `identity()` is collected, its owner sends `identity-dispose` so the peer drops its cached copy, and a peer that had passed that value further along tells its own peer in turn, so a chain of contexts unwinds from the origin outward. When an `EventTarget` façade is collected, one call removes every listener it registered on the source.
 
 ## Version compatibility
 

@@ -3,22 +3,23 @@ title: identity() and transfer()
 description: Keep a reference stable across a connection with identity(), or move a value instead of copying it with transfer().
 ---
 
-Osra comes with two small wrapper functions that change how a value crosses a connection: `identity()` keeps a reference stable, and `transfer()` moves a value instead of copying it.\
-Both of them are no-ops on values they do not apply to, and both lie a little at the type level: `identity(x)` and `transfer(x)` have the same type as `x`, so they slot into your existing signatures without changing anything.
+Osra comes with two small functions that change how a value crosses a connection: `identity()` keeps a reference stable, and `transfer()` moves a value instead of copying it.\
+Both of them are no-ops on values they do not apply to, and neither changes the type of what you pass: `identity(x)` hands you back `x` itself, and `transfer(x)` is typed as `x`, so they slot into your existing signatures without changing anything.
 
 ## identity()
 
 By default, every send is a copy.\
 This means that if you send the same object twice, the other side ends up with two unrelated objects.
 
-Wrapping the value in `identity(value)` pins it to a reference instead.\
+Marking the value with `identity(value)` ties it to its reference instead.\
 The other side sees a single object no matter how many times you send it, and it stays that same object on every later send.
 
 ```ts twoslash title="worker.ts"
 import { expose, identity } from 'osra'
 
-const value = { foo: 'bar' }
-const payload = { value, ref1: identity(value), ref2: identity(value) }
+const plain = { foo: 'bar' }
+const shared = { foo: 'bar' }
+const payload = { plain1: plain, plain2: plain, ref1: identity(shared), ref2: shared }
 export type Payload = typeof payload
 
 expose(payload, { transport: globalThis })
@@ -27,8 +28,9 @@ expose(payload, { transport: globalThis })
 ```ts twoslash title="main.ts"
 // @filename: worker.ts
 import { expose, identity } from 'osra'
-const value = { foo: 'bar' }
-const payload = { value, ref1: identity(value), ref2: identity(value) }
+const plain = { foo: 'bar' }
+const shared = { foo: 'bar' }
+const payload = { plain1: plain, plain2: plain, ref1: identity(shared), ref2: shared }
 export type Payload = typeof payload
 expose(payload, { transport: globalThis })
 // @filename: main.ts
@@ -37,16 +39,19 @@ declare const worker: Worker
 import type { Payload } from './worker'
 import { expose } from 'osra'
 
-const { value, ref1, ref2 } = await expose<Payload>({}, { transport: worker })
+const { plain1, plain2, ref1, ref2 } = await expose<Payload>({}, { transport: worker })
 
-value === ref1 // false, one is a copy
-ref1 === ref2 // true, same reference
+plain1 === plain2 // false, the same object in two places arrives as two copies
+ref1 === ref2 // true, one reference, and marking it once was enough
 ```
+
+One thing to note is that `ref2` was sent without any wrapper.\
+`identity()` marks the value rather than that one send, so every later send of it resolves to the same object, and the mark travels with the value wherever it goes next.
 
 ### The return trip
 
-Sending a revived value back to where it came from gives its origin a fresh copy, just like any other send.\
-If you wrap it in `identity()` again, the origin gets its actual original object back:
+The mark stays on the value wherever it goes, so only the side that owns it ever has to opt in.\
+A peer sending a revived identity back gives the origin its actual original object, with nothing to mark on the way home:
 
 ```ts twoslash
 import { expose, identity } from 'osra'
@@ -56,20 +61,78 @@ const settings = { theme: 'dark' }
 expose({
   getSettings: () => identity(settings),
   saveSettings: (saved: typeof settings) => {
-    saved === settings // true, only when the peer sent it back wrapped
+    saved === settings // true, the peer just sent back what it was given
   }
 }, { transport: globalThis })
 ```
 
 This is what makes remote callbacks removable: `removeEventListener` needs the exact function reference that was registered, and osra's own [`EventTarget`](/guides/supported-types/#eventtarget) façade uses `identity()` internally for exactly that.
 
+One thing to note is that the peer's value is still its own copy, so changes it makes to that copy are not synced back to yours.\
+What travels is the reference, not the contents.
+
+### Down a chain of contexts
+
+An identity keeps working however far the value travels.\
+Every context that receives one can pass it on to the next, and each hop resolves what comes back to exactly the value it handed out, all the way down to the origin:
+
+```ts twoslash title="page.ts"
+import { expose, identity } from 'osra'
+declare const worker: Worker
+// ---cut---
+const session = { user: 'ada' }
+
+expose({
+  getSession: async () => identity(session),
+  close: async (returned: typeof session) => {
+    returned === session // true, however many contexts it went through
+  }
+}, { transport: worker })
+```
+
+```ts twoslash title="worker.ts"
+import { expose } from 'osra'
+declare const child: Worker
+type Page = {
+  getSession: () => Promise<{ user: string }>
+  close: (session: { user: string }) => Promise<void>
+}
+// ---cut---
+// the middle context forwards both ways and marks nothing itself
+const page = await expose<Page>({}, { transport: globalThis })
+
+expose({
+  getSession: async () => page.getSession(),
+  close: async (session: { user: string }) => page.close(session),
+}, { transport: child })
+```
+
+```ts twoslash title="child.ts"
+import { expose } from 'osra'
+type Middle = {
+  getSession: () => Promise<{ user: string }>
+  close: (session: { user: string }) => Promise<void>
+}
+// ---cut---
+const middle = await expose<Middle>({}, { transport: globalThis })
+
+const session = await middle.getSession()
+await middle.close(session)
+```
+
+The middle context gets the same value back on every call too, and so does every context after it.\
+Sending it on costs one full payload the first time a given peer sees it, and just the reference on every send after that.
+
+One thing to note is that the value comes home the way it went out.\
+Each context resolves an identity for the peers it exchanged it with, so the return trip retraces the same hops. Handing the value to a context by a different route gives that context a separate reference, tied to whoever sent it rather than to the origin.
+
 ### Lifetime and cleanup
 
 Primitives pass through `identity()` untouched, since there is no reference to keep.\
-Wrapping the same value twice does nothing extra either, you get the exact same wrapper back.
+Marking the same value twice does nothing extra either, you get your value straight back both times.
 
 One thing to note is that each side only holds on to the other's identities for as long as the original value is alive.\
-When your value gets garbage collected, osra tells the peer to drop its cached copy.
+When your value gets garbage collected, osra tells the peer to drop its cached copy, and a peer that was passing it further along does the same for its own peer, so a chain unwinds from the origin outward.
 
 Note: unique symbols (`Symbol()`) ride this machinery automatically, which is why they keep their identity across a connection without you wrapping anything, as covered in [supported types](/guides/supported-types/#symbols).
 

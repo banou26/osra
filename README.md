@@ -106,7 +106,7 @@ Transports are either **structured-clone** (Worker, Window, MessagePort, SharedW
 | `Date`, `BigInt`, `Map`, `Set` | ✅ | ✅ | |
 | `ArrayBuffer`, `Int8Array`, `Uint8Array`, `Uint8ClampedArray`, `Int16Array`, `Uint16Array`, `Int32Array`, `Uint32Array`, `Float16Array`, `Float32Array`, `Float64Array`, `BigInt64Array`, `BigUint64Array` | ✅ | ✅ | |
 | `Error` + subclasses | ✅ | ✅ | built-ins errors properly preserve their subclass; custom error classes becomes generic `Error` |
-| `Symbol` | ✅ | ✅ | `Symbol.for` properly preserves the Symbol's key; `Symbol()` is automatically wrapped with [`identity()`](#identity) |
+| `Symbol` | ✅ | ✅ | `Symbol.for` properly preserves the Symbol's key; `Symbol()` automatically rides the [`identity()`](#identity) machinery |
 | `RegExp` | ✅ | ❌ | |
 | `SharedArrayBuffer` | ✅ | ❌ | |
 | Function | ✅ | ✅ | becomes `(...args) => Promise<result>`; arguments and results are properly handled too |
@@ -128,14 +128,15 @@ Transports are either **structured-clone** (Worker, Window, MessagePort, SharedW
 
 ## Identity
 
-`identity(value)` preserves reference equality across contexts, sending the same identity wrapped value twice results in the same object reference on the peer.
+`identity(value)` marks a value so it keeps its reference across contexts: the peer sees one object for it however many times it is sent, and the mark stays on the value rather than on that one send.
 
 `worker.ts`
 ```ts
 import { expose, identity } from 'osra'
 
-const value = { foo: 'bar' }
-const payload = { value, ref1: identity(value), ref2: identity(value) }
+const plain = { foo: 'bar' }
+const shared = { foo: 'bar' }
+const payload = { plain1: plain, plain2: plain, ref1: identity(shared), ref2: shared }
 
 expose(payload, { transport: globalThis })
 export type Payload = typeof payload
@@ -147,10 +148,23 @@ import type { Payload } from './worker'
 import { expose } from 'osra'
 
 const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
-const { value, ref1, ref2 } = await expose<Payload>({}, { transport: worker })
+const { plain1, plain2, ref1, ref2 } = await expose<Payload>({}, { transport: worker })
 
-value === ref1 // false
-ref1 === ref2 // true
+plain1 === plain2 // false, the same object in two places arrives as two copies
+ref1 === ref2 // true, marking it once was enough
+```
+
+Because the mark travels with the value, a peer can send it back, or pass it on to a third context and have it come back from there, without marking anything itself. Each context resolves it to exactly what it handed out, down to the original reference.
+
+```ts
+const settings = { theme: 'dark' }
+
+expose({
+  getSettings: async () => identity(settings),
+  saveSettings: async (saved: typeof settings) => {
+    saved === settings // true, however many contexts it went through
+  }
+}, { transport: globalThis })
 ```
 
 

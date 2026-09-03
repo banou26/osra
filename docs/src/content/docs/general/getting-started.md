@@ -16,7 +16,8 @@ npm install osra
 
 ## Simple cross context communication
 
-If you have a worker(nodejs worker, web worker, doesn't matter) and you'd like to call a function from your main thread, using osra, it's as simple as calling [`expose(value, options)`](/reference/expose).
+If you have a web worker and you'd like to call a function from your main thread, using osra, it's as simple as calling [`expose(value, options)`](/reference/expose).\
+A Node.js worker works the same way, with `parentPort` on the worker side, see [transports](/guides/transports/#nodejs).
 
 ```ts twoslash title="worker.ts"
 type Payload = { mult: (a: number, b: number) => number }

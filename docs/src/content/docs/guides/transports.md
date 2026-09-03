@@ -18,6 +18,7 @@ The following table contains osra's natively supported transports, with their co
 | [`WebSocket`](https://developer.mozilla.org/en-US/docs/Web/API/WebSocket) | JSON | |
 | WebExtension [`Port`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/Port) | JSON | |
 | WebExtension [`runtime.onMessage`](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/onMessage) | JSON | Receive only, pair it with a `sendMessage` emit |
+| Node.js `MessagePort`, `parentPort` | structured | See [Node.js](#nodejs) below |
 | `{ emit, receive }` | either | See [custom transports](/guides/custom-transports-and-relays/) |
 
 
@@ -337,3 +338,51 @@ runtime.onMessage.addListener((message: unknown, sender: Runtime.MessageSender) 
   peer(tabId).then(listener => listener(message, { sender }))
 })
 ```
+
+## Node.js
+
+Osra runs in Node.js as well, `MessageChannel`, `MessagePort` and `WebSocket` are the same platform objects there.
+
+One thing to note is that a [`worker_threads`](https://nodejs.org/api/worker_threads.html) worker has no global `postMessage`, so on the worker side you expose on `parentPort`, which is a real `MessagePort`.\
+On the main side, the `Worker` object is an event emitter rather than an event target, so wrap it in a small [custom transport](/guides/custom-transports-and-relays/):
+
+```ts twoslash title="worker.ts"
+type Payload = { mult: (a: number, b: number) => number }
+// ---cut---
+import { parentPort } from 'node:worker_threads'
+import { expose } from 'osra'
+
+export const { mult } = await expose<Payload>(
+  { add: (a: number, b: number) => a + b },
+  { transport: parentPort! }
+)
+
+await mult(3, 7) // 21
+```
+
+```ts twoslash title="main.ts"
+type Payload = { add: (a: number, b: number) => number }
+// ---cut---
+import type { TransferListItem } from 'node:worker_threads'
+import { Worker } from 'node:worker_threads'
+import { expose } from 'osra'
+
+const worker = new Worker(new URL('./worker.ts', import.meta.url))
+
+export const { add } = await expose<Payload>(
+  { mult: (a: number, b: number) => a * b },
+  {
+    transport: {
+      emit: (message, transferables) =>
+        worker.postMessage(message, transferables as TransferListItem[]),
+      receive: listener => {
+        worker.on('message', message => listener(message, {}))
+      }
+    }
+  }
+)
+
+await add(40, 2) // 42
+```
+
+Keep in mind that on Node.js 22 and 24 the JSON transports base64 their binary data through a fallback, since those versions don't ship `Uint8Array.prototype.toBase64` yet. Nothing changes for you, it's just slower than the native path.

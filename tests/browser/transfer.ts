@@ -2,11 +2,13 @@ import type { Transport } from '../../src'
 
 import { expect } from 'chai'
 
+import { toHex } from './utils'
+
 import { expose, transfer } from '../../src/index'
 import { EventChannel, type EventPort } from '../../src/utils/event-channel'
 
 const hashToHex = async (arrayBuffer: BufferSource) =>
-  new Uint8Array((await crypto.subtle.digest('SHA-256', arrayBuffer))).toHex() as string
+  toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', arrayBuffer)))
 
 export const unwrappedBufferIsCopied = async (transport: Transport) => {
   const value = async (data: ArrayBuffer) => data.byteLength
@@ -703,14 +705,14 @@ export const messagePortStillTransfersWithoutWrapper = async (transport: Transpo
 }
 
 export const transferredBufferDataRoundTrips = async (transport: Transport) => {
-  const value = async (data: ArrayBuffer) => new Uint8Array(data).toHex() as string
+  const value = async (data: ArrayBuffer) => toHex(new Uint8Array(data))
   expose(value, { transport })
   const remote = await expose<typeof value>({}, { transport })
 
   const buffer = new ArrayBuffer(64)
   const u8 = new Uint8Array(buffer)
   crypto.getRandomValues(u8)
-  const expectedHex = u8.toHex() as string
+  const expectedHex = toHex(u8)
 
   const receivedHex = await remote(transfer(buffer))
   expect(receivedHex).to.equal(expectedHex)

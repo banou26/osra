@@ -63,7 +63,39 @@ export const peerCloseRejectsPendingCalls = async () => {
   await expect(call).to.eventually.be.rejectedWith(/connection closed/)
 }
 
-/** Collects anything that escapes to the page while `run` is in flight.
+/** Where the host reports an escape: a browser page raises global `error` and `unhandledrejection`
+ *  events, node emits the same two on `process`. Picked at call time so one test body runs under
+ *  both runners; the browser branch is the original hook unchanged. */
+const escapeListeners = (escaped: unknown[]): { attach: () => void, detach: () => void } => {
+  if (typeof globalThis.addEventListener === 'function') {
+    const onError = (event: ErrorEvent) => escaped.push(event.error ?? event.message)
+    const onRejection = (event: PromiseRejectionEvent) => escaped.push(event.reason)
+    return {
+      attach: () => {
+        globalThis.addEventListener('error', onError)
+        globalThis.addEventListener('unhandledrejection', onRejection)
+      },
+      detach: () => {
+        globalThis.removeEventListener('error', onError)
+        globalThis.removeEventListener('unhandledrejection', onRejection)
+      },
+    }
+  }
+  const onError = (error: Error) => escaped.push(error)
+  const onRejection = (reason: unknown) => escaped.push(reason)
+  return {
+    attach: () => {
+      process.on('uncaughtException', onError)
+      process.on('unhandledRejection', onRejection)
+    },
+    detach: () => {
+      process.off('uncaughtException', onError)
+      process.off('unhandledRejection', onRejection)
+    },
+  }
+}
+
+/** Collects anything that escapes to the host while `run` is in flight.
  *
  *  Load-bearing: the callee's handler is a DETACHED async IIFE (function.ts box()), so a throw inside it
  *  reaches no caller and no assertion. Without this hook a test can claim "and it must not throw on the way
@@ -71,15 +103,12 @@ export const peerCloseRejectsPendingCalls = async () => {
  *  was vacuous on its first pass. */
 const withoutEscapingErrors = async (run: () => Promise<void>): Promise<unknown[]> => {
   const escaped: unknown[] = []
-  const onError = (event: ErrorEvent) => escaped.push(event.error ?? event.message)
-  const onRejection = (event: PromiseRejectionEvent) => escaped.push(event.reason)
-  globalThis.addEventListener('error', onError)
-  globalThis.addEventListener('unhandledrejection', onRejection)
+  const listeners = escapeListeners(escaped)
+  listeners.attach()
   try {
     await run()
   } finally {
-    globalThis.removeEventListener('error', onError)
-    globalThis.removeEventListener('unhandledrejection', onRejection)
+    listeners.detach()
   }
   return escaped
 }

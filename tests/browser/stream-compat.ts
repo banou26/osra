@@ -10,8 +10,10 @@ import { BoxBase } from '../../src/revivables/utils'
 
 // legacyBox/legacyRevive below are VERBATIM osra 0.5.5 implementations - do not modernize them.
 
+// any structured transport object serves here: the revivables only ask isJsonOnlyTransport of it,
+// and a browser global would keep the group off the node runner
 const fakeContext = (): RevivableContext => ({
-  transport: window,
+  transport: { emit: () => {}, receive: () => {} },
   remoteUuid: crypto.randomUUID(),
   sendMessage: () => {},
   revivableModules: defaultRevivableModules,

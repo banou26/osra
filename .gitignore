@@ -1,6 +1,7 @@
 node_modules/
 build/
 build-test/
+build-test-node/
 tmp/
 test-results
 .nyc_output/

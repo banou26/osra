@@ -2,6 +2,8 @@ import type { Transport } from '../../src'
 
 import { expect } from 'chai'
 
+import { toHex } from './utils'
+
 import { expose } from '../../src/index'
 
 export const argsAndResponse = async (transport: Transport) => {
@@ -129,7 +131,7 @@ export const userPromise = async (transport: Transport) => {
 }
 
 const hashToHex = async (arrayBuffer: BufferSource) =>
-  new Uint8Array((await crypto.subtle.digest('SHA-256', arrayBuffer))).toHex() as string
+  toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', arrayBuffer)))
 
 export const userArrayBuffer = async (transport: Transport) => {
   const _arrayBuffer = new ArrayBuffer(100)

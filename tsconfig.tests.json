@@ -18,6 +18,7 @@
   "include": [
     "src/**/*",
     "tests/browser/**/*",
+    "tests/node/**/*",
     "tests/extension/**/*",
     "examples/**/*.ts"
   ]

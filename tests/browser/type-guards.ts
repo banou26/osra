@@ -29,43 +29,53 @@ const crossOriginWindowMock = (): Window => {
   return proxy as Window
 }
 
+// The page's own window where there is one. Node has no window global, so it gets an object with the
+// same shape: `window` pointing back at itself, which is the probe isWindow makes first
+const sameOriginWindowMock = (): Window => {
+  const mock: Record<string, unknown> = { closed: false, close: () => {}, postMessage: () => {} }
+  mock.window = mock
+  mock.self = mock
+  return mock as unknown as Window
+}
+const sameOriginWindow: Window = typeof window !== 'undefined' ? window : sameOriginWindowMock()
+
 export const windowIsNotJsonOnly = () => {
-  expect(isJsonOnlyTransport(window)).to.equal(false)
+  expect(isJsonOnlyTransport(sameOriginWindow)).to.equal(false)
 }
 
 export const wrappedWindowTransportIsNotJsonOnly = () => {
-  const transport = { isJson: false, emit: window, receive: window }
+  const transport = { isJson: false, emit: sameOriginWindow, receive: sameOriginWindow }
   expect(isJsonOnlyTransport(transport as any)).to.equal(false)
 }
 
 export const wrappedWindowTransportIsNotEmitJsonOnly = () => {
-  const transport = { isJson: false, emit: window, receive: window }
+  const transport = { isJson: false, emit: sameOriginWindow, receive: sameOriginWindow }
   expect(isEmitJsonOnlyTransport(transport)).to.equal(false)
 }
 
 export const wrappedWindowTransportIsNotReceiveJsonOnly = () => {
-  const transport = { isJson: false, emit: window, receive: window }
+  const transport = { isJson: false, emit: sameOriginWindow, receive: sameOriginWindow }
   expect(isReceiveJsonOnlyTransport(transport)).to.equal(false)
 }
 
 export const plainObjectIsNotWebExtensionRuntime = () => {
   expect(isWebExtensionRuntime({})).to.equal(false)
   expect(isWebExtensionRuntime({ foo: 'bar' })).to.equal(false)
-  expect(isWebExtensionRuntime({ isJson: false, emit: window, receive: window })).to.equal(false)
+  expect(isWebExtensionRuntime({ isJson: false, emit: sameOriginWindow, receive: sameOriginWindow })).to.equal(false)
 }
 
 export const plainObjectIsNotWebExtensionPort = () => {
   expect(isWebExtensionPort({})).to.equal(false)
-  expect(isWebExtensionPort({ isJson: false, emit: window, receive: window })).to.equal(false)
+  expect(isWebExtensionPort({ isJson: false, emit: sameOriginWindow, receive: sameOriginWindow })).to.equal(false)
 }
 
 export const windowIsWindow = () => {
-  expect(isWindow(window)).to.equal(true)
+  expect(isWindow(sameOriginWindow)).to.equal(true)
 }
 
 export const plainObjectIsNotWindow = () => {
   expect(isWindow({})).to.equal(false)
-  expect(isWindow({ isJson: false, emit: window, receive: window })).to.equal(false)
+  expect(isWindow({ isJson: false, emit: sameOriginWindow, receive: sameOriginWindow })).to.equal(false)
 }
 
 export const explicitJsonOnlyTransport = () => {
@@ -87,8 +97,8 @@ export const crossOriginWindowIsNotJsonOnly = () => {
 
 export const normalizeCrossOriginWindowEmitTransport = () => {
   const win = crossOriginWindowMock()
-  expect(() => normalizeTransport({ receive: window, emit: win } as any)).to.not.throw()
-  const normalized = normalizeTransport({ receive: window, emit: win } as any) as any
+  expect(() => normalizeTransport({ receive: sameOriginWindow, emit: win } as any)).to.not.throw()
+  const normalized = normalizeTransport({ receive: sameOriginWindow, emit: win } as any) as any
   expect(normalized.isJson).to.equal(false)
   expect(normalized.emit).to.equal(win)
 }

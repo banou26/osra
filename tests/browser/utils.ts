@@ -21,3 +21,8 @@ export const makeJsonTransport = (port: MessagePort) => ({
   emit: makeJsonEmitter(port),
   receive: makeJsonReceiver(port),
 })
+
+/** Hex of a byte view. `Uint8Array.prototype.toHex` is not in node 22 or 24, which the node runner
+ *  also targets, so the tests spell it out. */
+export const toHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')

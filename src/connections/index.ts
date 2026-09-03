@@ -21,6 +21,7 @@ import { createTypedEventTarget } from '../utils/typed-event-target.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import { registerOsraMessageListener, sendOsraMessage } from '../utils/transport.js'
 import { runTeardown } from '../utils/teardown.js'
+import { markPortsShipped } from '../revivables/message-port.js'
 import { asExposed, createConnectionQueue, isContextual, mergeRevivableModules, normalizeTransport, CONTEXT } from './utils.js'
 
 // Explicit, not `export *`: this barrel is re-exported by the package root, and a star put protocol
@@ -119,7 +120,10 @@ export const startConnections = <
 
   const sendEnvelope = (message: MessageVariant, targetOrigin: string = origin) => {
     const envelope = { [OSRA_KEY]: key, name, uuid, ...message }
-    sendOsraMessage(transport, envelope, targetOrigin, getTransferableObjects(envelope))
+    const transferables = getTransferableObjects(envelope)
+    sendOsraMessage(transport, envelope, targetOrigin, transferables)
+    // after the post, not before: a local end whose peer was just handed over may close now
+    markPortsShipped(transferables)
   }
 
   const sendMessage = (message: MessageVariant, targetOrigin?: string) => {

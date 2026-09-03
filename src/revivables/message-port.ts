@@ -184,8 +184,10 @@ const sendClose = (context: RevivableContext, portId: Uuid) => {
 }
 
 const postRevived = <T>(port: AnyPort<T>, data: T, synthetic: boolean) => {
-  if (synthetic) port.postMessage(data)
-  else port.postMessage(data, getTransferableObjects(data))
+  if (synthetic) { port.postMessage(data); return }
+  const transferables = getTransferableObjects(data)
+  port.postMessage(data, transferables)
+  markPortsShipped(transferables)
 }
 
 // MUST stay in its own scope: sharing box()'s environment record would let the FR-held closure pin context/liveRef/handlers, breaking the gc-tracker contract
@@ -307,6 +309,8 @@ export const revive = <T extends Capable, T2 extends RevivableContext>(
   context: T2,
 ): TypedMessagePort<T> => {
   if ('port' in value) {
+    // Revived in the realm that made it, so it never travelled: release what its local end held
+    markPortsShipped([value.port as MessagePort])
     if (value.autoBox) return createProtocolPort<T>(value.port as TypedMessagePort<Capable>, context)
     return value.port
   }
@@ -316,9 +320,41 @@ export const revive = <T extends Capable, T2 extends RevivableContext>(
 /** Wraps a real MessagePort so revivables can treat it like a transparent
  *  EventTarget that auto-boxes/revives - letting live values (Promises,
  *  Functions, …) ride a clone-only transport. */
+/** Whether the peer of a channel's local end has left this realm yet, and what the local end did
+ *  in the meantime.
+ *
+ *  Gecko loses a message that was posted on a port BEFORE its peer was transferred to a worker if the
+ *  sender closes within about a task of the transfer: post on port1, transfer port2, close port1 in
+ *  the same tick, a microtask later or a `setTimeout(0)` later, and the worker never sees it. Posted
+ *  after the transfer, the same message survives an immediate close, and Chromium and WebKit deliver
+ *  it in every order, as the spec's "move the queue along with the port" says. Osra hits the losing
+ *  order whenever a channel settles before its box has shipped, a signal aborted in the same tick as
+ *  the call or a promise already resolved when it crossed, because the envelope carrying port2
+ *  leaves in the microtask that delivers the EventPort message. Measured 2026-09-03 on Firefox 1532
+ *  (Playwright), page to module worker; same-realm transfers are unaffected. So a local end holds
+ *  its posts and its close until `markPortsShipped` sees the peer in a transfer list, then replays
+ *  them in order, which is the order Gecko handles. */
+type Shipping = { shipped: boolean, pending: Array<() => void> }
+
+const unshippedRemotes = new WeakMap<object, Shipping>()
+
+/** Called after a post with its transfer list: replays what the local end of every channel whose
+ *  peer was in it did while unshipped. A peer that never ships keeps its local end open, and its
+ *  posts unsent, until garbage collection. */
+export const markPortsShipped = (transferables: readonly Transferable[]): void => {
+  for (const transferable of transferables) {
+    const shipping = unshippedRemotes.get(transferable)
+    if (!shipping) continue
+    unshippedRemotes.delete(transferable)
+    shipping.shipped = true
+    for (const replay of shipping.pending.splice(0)) replay()
+  }
+}
+
 const createProtocolPort = <T>(
   port: TypedMessagePort<Capable>,
   ctx: RevivableContext,
+  shipping?: Shipping,
 ): TypedMessagePort<T> => {
   const target = new EventTarget() as TypedMessagePort<T>
   const onMessage = ({ data }: MessageEvent<Capable>): void => {
@@ -341,14 +377,24 @@ const createProtocolPort = <T>(
     const boxed = outsideTransfer(() => recursiveBox(data as Capable, ctx))
     const transferables = getTransferableObjects(boxed)
     const extra = Array.isArray(opt) ? opt : []
-    port.postMessage(boxed, extra.length ? [...transferables, ...extra] : transferables)
+    const transferList = extra.length ? [...transferables, ...extra] : transferables
+    const post = () => {
+      port.postMessage(boxed, transferList)
+      markPortsShipped(transferList)
+    }
+    if (shipping && !shipping.shipped) { shipping.pending.push(post); return }
+    post()
   }
   target.start = () => port.start()
-  target.close = () => {
+  const close = () => {
     port.removeEventListener('message', onMessage)
     port.removeEventListener('messageerror', onMessageError as EventListener)
     port.removeEventListener('close', onClose as EventListener)
     port.close()
+  }
+  target.close = () => {
+    if (shipping && !shipping.shipped) { shipping.pending.push(close); return }
+    close()
   }
   return target
 }
@@ -367,8 +413,10 @@ export const createRevivableChannel = <T extends Capable>(
     }
   }
   const { port1, port2 } = new MessageChannel() as unknown as TypedMessageChannel<Capable, Capable>
+  const shipping: Shipping = { shipped: false, pending: [] }
+  unshippedRemotes.set(port2, shipping)
   return {
-    localPort: createProtocolPort<T>(port1, context) as unknown as AnyPort<T>,
+    localPort: createProtocolPort<T>(port1, context, shipping) as unknown as AnyPort<T>,
     boxedRemote: box(port2 as unknown as StructurableTransferablePort<T>, context, { autoBox: true }),
   }
 }

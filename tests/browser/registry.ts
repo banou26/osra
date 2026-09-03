@@ -19,6 +19,7 @@ import * as streamCompat from './stream-compat'
 import * as teardownTests from './teardown'
 import * as typeGuards from './type-guards'
 import * as webExtPortDisconnect from './webext-port-disconnect'
+import * as workerChannels from './worker-channels'
 import * as workerHandshake from './worker-handshake'
 
 const fns = <Fn extends (...args: any[]) => any>(o: Record<string, unknown>): Record<string, Fn> =>
@@ -58,5 +59,6 @@ export const standaloneTests: Readonly<Record<string, Readonly<Record<string, ()
   Teardown: fns(teardownTests),
   TypeGuards: fns(typeGuards),
   WebExtPortDisconnect: fns(webExtPortDisconnect),
+  WorkerChannels: fns(workerChannels),
   WorkerHandshake: fns(workerHandshake),
 }

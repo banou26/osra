@@ -467,6 +467,16 @@ const reviveViaPortId = <T extends Capable>(
   const internalPortRef = new WeakRef(internalPort)
 
   let cleanedUp = false
+  // node's MessagePort dispatches a close of its own once either end closes, after the one the
+  // handler below dispatches, where a browser delivers none to a port whose local end is closed
+  // (measured 2026-09-03, node 26.8.1 against the Playwright suite). The first listener on the port
+  // swallows that second one, so a consumer sees exactly one close on every runtime.
+  let closeDelivered = false
+  if (!(userPort instanceof EventPort)) {
+    userPort.addEventListener('close', event => {
+      if (closeDelivered) event.stopImmediatePropagation()
+    })
+  }
   const performCleanup = () => {
     if (cleanedUp) return
     cleanedUp = true
@@ -482,6 +492,7 @@ const reviveViaPortId = <T extends Capable>(
       performCleanup()
       const user = userPortRef.deref()
       user?.dispatchEvent(new Event('close'))
+      closeDelivered = true
       user?.close()
       return
     }

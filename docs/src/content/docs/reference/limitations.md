@@ -4,7 +4,8 @@ description: What osra cannot hide about the boundary between two contexts, and 
 ---
 
 Osra tries hard to make a value from another context feel like a local one, but a message boundary can never be hidden completely.\
-This page collects the places where it stays visible, with the workaround where there is one.\
+This page collects the places where it stays visible, with the workaround where there is one.
+
 Some of them are caught by [the type system](/reference/typescript/#the-capable-check) before your code ever runs, the others you will meet at runtime, so it is worth reading through the list once.
 
 ## Calls
@@ -42,7 +43,7 @@ One thing to note is that generic functions lose their generics along the way: a
 Expose a concrete signature per type you care about, or accept the widening.
 
 Also keep in mind that streams and generators are single use, because osra calls `getReader()` and `[Symbol.asyncIterator]()` at send time.\
-If you try to send the same `ReadableStream` twice it will throw, and so will a `Request` or `Response` whose body already went out, while a generator sent to two peers hands them a single shared cursor that they both advance.\
+Sending the same `ReadableStream` twice throws, and so does sending a `Request` or `Response` whose body already went out, while a generator sent to two peers hands them a single shared cursor that they both advance.\
 Expose a function that makes a fresh one per call, as shown in [revivables](/guides/revivables/#async-generators).
 
 ## Values
@@ -54,19 +55,20 @@ Most values cross intact, but a few arrive with something missing:
 | A class instance | Its own data properties, without the prototype, so the methods are gone |
 | A custom `Error` subclass | A plain `Error` keeping `name`, `message`, `stack` and `cause`, so `instanceof` breaks but `error.name` still works |
 | An `Event` subclass | A generic `Event` without the subclass fields, so a `MessageEvent` arrives without its `data` |
-| An `EventTarget` | A listener-only façade |
+| An `EventTarget` | A listener-only proxy |
 | The same object in two places | Two independent copies |
 | A typed array view covering part of its buffer | A copy of just that window |
 | `WeakMap`, `WeakSet` and other context-bound values | Nothing, they cannot cross at all |
 
-Classes are the one you will hit first: osra only descends into plain objects and arrays, so it never looks inside a class instance, and structured clone drops the prototype.\
+Classes are the one you will hit first.\
+Osra only descends into plain objects and arrays, so it never looks inside a class instance, and structured clone drops the prototype.\
 Two sharper edges follow from that: an instance holding a function-valued own property (an arrow-function class field) coerces to `{}` entirely, data included, and a function nested inside a class instance is not proxied even though the same function on a plain object would be.\
 Use plain objects and functions, or write a [custom revivable](/guides/custom-revivables/) for the class. Built-in `Error` classes are the exception and revive properly, see [supported types](/guides/supported-types/#errors).
 
 If you need the extra fields of an `Event` subclass, extract them and send them alongside the event, see [supported types](/guides/supported-types/#events).
 
-The `EventTarget` façade is listener-only, and the registration itself travels as a message.\
-This means that events the source fires before your `addEventListener` call lands on it are missed entirely, with no way to catch up on them, and calling `dispatchEvent` on the façade does nothing, events only flow from the source outward.\
+The `EventTarget` proxy is listener-only, and the registration itself travels as a message.\
+This means that events the source fires before your `addEventListener` call lands on it are missed entirely, with no way to catch up on them, and calling `dispatchEvent` on the proxy does nothing, events only flow from the source outward.\
 More detail in [supported types](/guides/supported-types/#eventtarget).
 
 Also keep in mind that osra walks your value as a tree, not a graph.\
@@ -82,7 +84,8 @@ The [`Capable` check](/reference/typescript/#the-capable-check) rejects them whe
 
 When several peers answer on the same key they all connect, and each one gets your exposed value and can call into it.\
 Awaiting `expose()` only ever gives you the first of them, and stays resolved on it.\
-To see the others, iterate the same result instead, each peer arrives as it connects, see [multiple peers](/guides/multiple-peers/#several-peers-one-expose).\
+To see the others, iterate the same result instead, each peer arrives as it connects, see [multiple peers](/guides/multiple-peers/#several-peers-one-expose).
+
 One thing to note is that peers connecting before anything iterates are buffered only up to the most recent 32, so start your loop early when every peer matters, see [connections](/guides/connections/#every-loop-sees-every-peer).
 
 A remote `AbortSignal` does not fire when the connection dies, so it cannot serve as a liveness check.\
@@ -90,7 +93,7 @@ Use your own `unregisterSignal`, or the rejection of your pending calls, see [wh
 
 If nobody ever answers, `expose()` stays pending forever.\
 That is deliberate, it is what makes a late-loading iframe or a slow-starting worker connect at all, see [errors and lifecycle](/guides/lifecycle/#connecting).\
-If you need a deadline, race the promise against a timeout, or abort the `unregisterSignal` you passed, which rejects it with your reason.
+If you need a deadline, abort the `unregisterSignal` you passed once it passes, which rejects `expose()` with your reason.
 
 ## JSON transports
 

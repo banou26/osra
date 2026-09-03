@@ -5,7 +5,8 @@ description: How Remote<T> maps your types across the connection, how the Capabl
 
 Osra's type system does two jobs, and two types carry almost all of it.\
 `Remote<T>` describes what a value looks like from the other side of a connection, so what you get back from `expose()` matches what actually arrives.\
-`Capable` is the set of every type osra can send over the transport you passed, and anything outside of it is rejected at compile time.\
+`Capable` is the set of every type osra can send over the transport you passed, and anything outside of it is rejected at compile time.
+
 `expose()` applies both of them for you, so most of the time you never write either one yourself.
 
 ## Remote&lt;T&gt;
@@ -17,7 +18,9 @@ The mapping is recursive, and it mostly does one thing: it makes every function 
 |---|---|
 | `(...args: P) => R` | `(...args: P) => Promise<Remote<Awaited<R>>>` |
 | `Promise<U>` | `Promise<Remote<U>>` |
-| `Map`, `Set`, `Date`, `Error`, `RegExp`, `ArrayBuffer` and its views, `Blob`, `File`, `FileList`, `ReadableStream`, `WritableStream`, `MessagePort`, `EventTarget`, `Request`, `Response`, `Headers` | itself |
+| `Map<K, V>`, `Set<V>`, `ReadableStream<C>` | The same container, with `Remote` applied to what it holds |
+| `Date`, `Error`, `RegExp`, `ArrayBuffer` and its views, `Blob`, `File`, `FileList`, `WritableStream`, `MessagePort`, `AbortSignal`, `Request`, `Response`, `Headers` | itself |
+| Any other `EventTarget` | `EventTarget`, since it arrives as the [listener-only proxy](/guides/supported-types/#eventtarget) |
 | `AsyncIterable<U>` | `AsyncIterableIterator<Remote<U>>` |
 | Arrays and objects | mapped field by field |
 | Everything else | itself |
@@ -26,22 +29,25 @@ The mapping is recursive, and it mostly does one thing: it makes every function 
 declare const worker: Worker
 import { expose } from 'osra'
 // ---cut---
-type Api = { add: (a: number, b: number) => number }
+type Api = {
+  add: (a: number, b: number) => number
+  handlers: Map<string, () => void>
+  events: EventTarget
+}
 
 const remote = await expose<Api>({}, { transport: worker })
 
 const sum = await remote.add(1, 2) // 3, behind a Promise
+const handler = remote.handlers.get('click') // (() => Promise<void>) | undefined
+remote.events // EventTarget, addEventListener and removeEventListener only
 ```
 
-The rows are tried in the order of the table, and that order matters once: the pass-through row wins over the async iterable one.\
-This means that a `ReadableStream` stays a `ReadableStream`, even though the platform makes it async iterable.
-
-One thing to note is that the pass-through row matches structurally, like everything in TypeScript.\
-So an `AbortSignal` or a `Worker` both match the `EventTarget` entry and keep their exact declared type, and so does your own class carrying `addEventListener`, `removeEventListener` and `dispatchEvent`.\
-Also keep in mind that the type can promise more than the runtime delivers here: an `AbortSignal` really does revive as a live signal, but a `Worker` or an `EventTarget` subclass arrives as the [listener-only façade](/guides/supported-types/#eventtarget), so the methods the type still shows, like `postMessage`, will not exist on the value that arrives.
+The rows are tried in the order of the table, which matters in two places.\
+A `ReadableStream` keeps being a `ReadableStream` even though the platform makes it async iterable, and a `MessagePort` or `AbortSignal` keeps its exact type even though both extend `EventTarget`, because osra revives those two faithfully.
 
 If you try to send a generic function, its type parameters are lost, because a conditional type cannot carry them across the mapping.\
-This means that `<T>(x: T) => T` collapses to `(x: unknown) => Promise<unknown>` on the other side. The function itself still works at runtime, only its typing is flattened.
+This means that `<T>(x: T) => T` collapses to `(x: unknown) => Promise<unknown>` on the other side.\
+The function itself still works at runtime, only its typing is flattened.
 
 Note: `Remote<unknown>` is just `unknown`.\
 So when you call `expose()` without a type argument, the peer's value comes back as `unknown` and you have to narrow it yourself before calling anything on it.
@@ -101,7 +107,7 @@ await value.ping() // Promise<string>
 | `Capable` | That base, plus every type the [revivable modules](/guides/custom-revivables/) contribute, nested in containers of any depth. |
 
 `expose()` checks the value you pass against `Capable`.\
-If you try to expose something your transport cannot carry, it will fail at the call site, instead of quietly becoming `{}` at runtime:
+If you try to expose something your transport cannot carry, it fails at the call site, instead of quietly becoming `{}` at runtime:
 
 ```ts twoslash
 // @errors: 2345
@@ -118,7 +124,7 @@ The error is a branded type carrying four symbol-keyed fields, which your editor
 | Field | What it holds |
 |---|---|
 | `ErrorMessage` | Why the value was rejected, one of the two messages below. |
-| `BadValue` | The first value found that the transport cannot carry, found by deep traversal wherever it is nested. |
+| `BadValue` | The first value found that the transport cannot carry, wherever it is nested. |
 | `Path` | The dotted and bracketed path to that value, like `a.b[2]`. An empty string means the root value itself failed. |
 | `ParentObject` | The immediate container holding the bad value, or the whole value when the root itself failed. |
 
@@ -126,7 +132,7 @@ So reading the error is mostly reading `Path`: it points at the exact field to f
 
 One gap to be aware of is that inside a value typed as a plain array, `T[]`, the traversal cannot descend, so `BadValue` becomes the array itself and `Path` stops at it.\
 Tuples are walked element by element and report the exact index.\
-And since `expose()` infers its value with a `const` type parameter, inline array literals arrive as tuples and get the precise report, so the coarse one only shows up for values typed as plain arrays elsewhere.
+Since `expose()` infers its value with a `const` type parameter, inline array literals arrive as tuples and get the precise report, so the coarse one only shows up for values typed as plain arrays elsewhere.
 
 ## JSON transports check harder
 
@@ -150,7 +156,9 @@ Types with a dedicated module that supports both modes, like `Date`, `Map`, `Set
 
 ## Custom types
 
-Registering a [custom revivable](/guides/custom-revivables/) widens `Capable`, as long as you tell the type system about it at the call site:
+Registering a [custom revivable](/guides/custom-revivables/) widens `Capable`.\
+On a side that passes no type argument, `expose()` infers the module list from the `revivableModules` option and your type is accepted right away.\
+On a side that names the peer's type, you have to pass the module list's type as the second type argument too:
 
 ```ts
 expose<PeerApi, ReturnType<typeof withMyType>>(value, {
@@ -159,16 +167,13 @@ expose<PeerApi, ReturnType<typeof withMyType>>(value, {
 })
 ```
 
-`revivableModules` is a function receiving the default module list and returning the final one, and its return type is what you pass as the second type argument, so the `Capable` check learns about your types.\
-Without that type argument your modules still run at runtime, but `Capable` falls back to the defaults and rejects your type where you wrote it.
-
-Also keep in mind the partial inference rule from above: naming `PeerApi` alone resets the module list parameter to its default, so pass both type arguments or neither.
+This is the partial inference rule from above: naming `PeerApi` alone resets the module list parameter to its default, so pass both type arguments or neither.\
+Without it your modules still run at runtime, but `Capable` falls back to the defaults and rejects your type where you wrote it.
 
 ## Requirements
 
-Osra does not pin a TypeScript version in its `package.json`, but in practice the shipped declarations set the floor.\
-They reference `Float16Array`, so your `lib` needs to be recent enough to include it, `esnext` is.\
+Osra does not pin a TypeScript version.\
 The library itself is type checked with TypeScript 7, and every example in these docs is checked with TypeScript 5.9, so those are the versions we exercise.
 
 Compile with `strict` on, it is the only configuration we test.\
-One thing to note is that you do not need `skipLibCheck`: the declarations are verified clean without it, compiled exactly as an npm consumer sees them.
+The shipped declarations are verified as an npm consumer sees them, with `skipLibCheck` off and a `lib` as low as `es2022` plus `dom`, so you don't need `skipLibCheck` or an `esnext` lib to use them.

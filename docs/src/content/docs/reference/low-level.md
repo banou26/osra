@@ -36,7 +36,8 @@ If you try to pass a transport that cannot both emit and receive, the returned p
 relay(transportA, transportB, options?)
 ```
 
-Forwards osra traffic between two channels. Use it when two contexts cannot see each other, but both can see you.\
+Forwards osra traffic between two channels.\
+Use it when two contexts cannot see each other, but both can see you.\
 A worker and an iframe are the typical pair: neither holds a reference to the other, so the page in the middle relays between them.
 
 ```ts twoslash
@@ -49,7 +50,7 @@ relay(worker, { emit: iframe.contentWindow!, receive: window }, { key: 'app' })
 
 Only envelopes matching `key` are forwarded, and nothing is ever revived in the middle, so no value ever exists in the relay context.\
 The two real ends still handshake directly with each other, the relay is invisible to them.\
-Also keep in mind that every forwarded message goes through [`getTransferableObjects()`](#gettransferableobjects) again, so buffers that were moved into the relay context are moved out of it too.
+Every forwarded message goes through [`getTransferableObjects()`](#gettransferableobjects) again, so buffers that were moved into the relay context are moved out of it too.
 
 | Option | |
 |---|---|
@@ -59,7 +60,8 @@ Also keep in mind that every forwarded message goes through [`getTransferableObj
 | `nameA` / `nameB` | Per side, only forward envelopes from a peer with this `name`. |
 | `unregisterSignal` | Abort to unhook both directions. |
 
-One thing to note is that each direction is hooked up independently: if one transport cannot receive or the other cannot emit, that direction is simply skipped, so a mismatched pair degrades to one way forwarding.
+One thing to note is that each direction is hooked up independently.\
+If one transport cannot receive or the other cannot emit, that direction is simply skipped, so a mismatched pair degrades to one way forwarding.
 
 More context in [custom transports & relays](/guides/custom-transports-and-relays/#relays).
 
@@ -84,7 +86,8 @@ The reason to reach for it is the second argument your listener gets, which `exp
 | `receiveTransport` | The transport it came from. |
 
 That makes it the way to filter extension messages by sender before osra ever processes them.\
-`expose()` does surface the sender too, but only per connection through the [context](/guides/connections/#what-is-in-the-context), after the handshake has already run, where the remedy is `context.abort()`; here you can drop the message outright:
+`expose()` does surface the sender too, but only per connection through the [context](/guides/connections/#what-is-in-the-context), after the handshake has already run, where the remedy is `context.abort()`.\
+Here you can drop the message outright:
 
 ```ts twoslash title="background.ts"
 import { runtime } from 'webextension-polyfill'
@@ -110,8 +113,10 @@ expose(
 )
 ```
 
-One thing to remember is that `registerOsraMessageListener` filters with osra's default `key` when you do not pass one, so if your `expose()` uses a custom `key`, pass the same one here or every envelope will be silently dropped.\
-Also keep in mind that a custom `receive` handler can return a cleanup function, and `registerOsraMessageListener` will call it when `unregisterSignal` aborts.
+One thing to remember is that `registerOsraMessageListener` filters with osra's default `key` when you do not pass one.\
+If your `expose()` uses a custom `key`, pass the same one here, or every envelope is silently dropped.
+
+Also keep in mind that a custom `receive` handler can return a cleanup function, and `registerOsraMessageListener` calls it when `unregisterSignal` aborts.
 
 If you only need the filter itself, `checkOsraMessageKey(message, key)` is the guard it uses internally: it checks that a value is an osra envelope carrying that `key`.\
 You can see it multiplexing peers by hand in the [connectionless extension example](/guides/transports/#connectionless).
@@ -122,7 +127,8 @@ You can see it multiplexing peers by hand in the [connectionless extension examp
 sendOsraMessage(transport, message, origin?, transferables?)
 ```
 
-The other half. It picks the right send call for whatever transport you hand it:
+The other half.\
+It picks the right send call for whatever transport you hand it:
 
 | Transport | How it sends |
 |---|---|
@@ -184,6 +190,14 @@ A few behaviors worth knowing about:
 
 The default module list is also exported as `defaultRevivableModules`, though the `revivableModules` option already hands it to you, so you rarely need the export itself.
 
+## Teardown hooks
+
+Three small helpers let a [live value](/guides/custom-revivables/#live-values) clean up after its connection:
+
+- `onTeardown(context, fn)` runs `fn` when the connection is torn down, and returns a function that unregisters it. Registering against a context that is already torn down runs `fn` immediately.
+- `isTornDown(context)` tells you whether that already happened, so a module can refuse new work instead of starting something no teardown will ever visit.
+- `onBoxWalkSettled(commit, rollback)` defers a side effect until the box walk it belongs to has finished, and runs `rollback` instead if that walk throws. A module that records "the peer knows this now" wants this, since a later sibling failing to box means nothing shipped.
+
 ## Constants
 
 | | Value | |
@@ -198,7 +212,8 @@ The public types, all importable from `osra` directly:
 
 - Transports: `Transport`, `PlatformTransport`, `CustomTransport`, `EmitTransport`, `ReceiveTransport`, `EmitHandler`, `ReceiveHandler`
 - Messages: `Message`, `MessageContext`, `Context`, `Uuid`
-- Values: `Capable`, `Remote`, `RevivableModule`, `RevivableContext`, `BoxBase`
+- Values: `Capable`, `Remote`, `RevivableModule`, `RevivableContext`, `DefaultRevivableModules`, `BoxBase`
 - Connections: `Exposed`, `Connected`, `Contextual`, `StartConnectionsOptions`, `RelayOptions`
 
-`Remote`, `Capable`, `Exposed` and `Connected` have their own page: [TypeScript](/reference/typescript/).
+`Remote`, `Capable`, `Exposed` and `Connected` have their own page: [TypeScript](/reference/typescript/).\
+The generated [API reference](/api/) lists every export with its exact signature.

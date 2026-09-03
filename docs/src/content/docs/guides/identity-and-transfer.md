@@ -3,16 +3,21 @@ title: identity() and transfer()
 description: Keep a reference stable across a connection with identity(), or move a value instead of copying it with transfer().
 ---
 
-Osra comes with two small functions that change how a value crosses a connection: `identity()` keeps a reference stable, and `transfer()` moves a value instead of copying it.\
-Both of them are no-ops on values they do not apply to, and neither changes the type of what you pass: `identity(x)` hands you back `x` itself, and `transfer(x)` is typed as `x`, so they slot into your existing signatures without changing anything.
+Osra comes with two small helpers that change how a value crosses a connection:
+
+- `identity(value)` keeps the value's reference stable, so the other side sees one object for it no matter how many times you send it.
+- `transfer(value)` moves the value instead of copying it, which is a lot cheaper for large buffers.
+
+Both of them give you back the exact value you passed in, with the same type, so you can drop them into an existing call without changing any signature.\
+Both are also no-ops on values they don't apply to, wrapping a string in either of them does nothing.
 
 ## identity()
 
 By default, every send is a copy.\
-This means that if you send the same object twice, the other side ends up with two unrelated objects.
+If you send the same object twice, the other side ends up with two unrelated copies of it.
 
-Marking the value with `identity(value)` ties it to its reference instead.\
-The other side sees a single object no matter how many times you send it, and it stays that same object on every later send.
+Wrapping the value in `identity()` once ties it to its reference instead.\
+From then on, the other side sees a single object for it, on every send:
 
 ```ts twoslash title="worker.ts"
 import { expose, identity } from 'osra'
@@ -42,16 +47,16 @@ import { expose } from 'osra'
 const { plain1, plain2, ref1, ref2 } = await expose<Payload>({}, { transport: worker })
 
 plain1 === plain2 // false, the same object in two places arrives as two copies
-ref1 === ref2 // true, one reference, and marking it once was enough
+ref1 === ref2 // true, one object, and marking it once was enough
 ```
 
 One thing to note is that `ref2` was sent without any wrapper.\
-`identity()` marks the value rather than that one send, so every later send of it resolves to the same object, and the mark travels with the value wherever it goes next.
+The mark lives on the value, not on that one send, so every later send of it resolves to the same object on the other side.
 
-### The return trip
+### Sending it back
 
-The mark stays on the value wherever it goes, so only the side that owns it ever has to opt in.\
-A peer sending a revived identity back gives the origin its actual original object, with nothing to mark on the way home:
+Since the mark travels with the value, the peer doesn't have to do anything to hand it back.\
+Whatever you gave out, you get back as your actual original object:
 
 ```ts twoslash
 import { expose, identity } from 'osra'
@@ -66,15 +71,15 @@ expose({
 }, { transport: globalThis })
 ```
 
-This is what makes remote callbacks removable: `removeEventListener` needs the exact function reference that was registered, and osra's own [`EventTarget`](/guides/supported-types/#eventtarget) façade uses `identity()` internally for exactly that.
+This is what makes remote callbacks removable: `removeEventListener` needs the exact function that was registered, and osra's own [`EventTarget`](/guides/supported-types/#eventtarget) proxy uses `identity()` for exactly that.
 
-One thing to note is that the peer's value is still its own copy, so changes it makes to that copy are not synced back to yours.\
-What travels is the reference, not the contents.
+Keep in mind that what travels is the reference, not the contents.\
+The peer's copy is still its own object, so a change made on one side is not synced to the other.
 
 ### Down a chain of contexts
 
 An identity keeps working however far the value travels.\
-Every context that receives one can pass it on to the next, and each hop resolves what comes back to exactly the value it handed out, all the way down to the origin:
+A context that received one can pass it on to the next, and whatever comes back resolves at each hop to exactly the value that hop handed out, all the way to the origin:
 
 ```ts twoslash title="page.ts"
 import { expose, identity } from 'osra'
@@ -120,26 +125,26 @@ const session = await middle.getSession()
 await middle.close(session)
 ```
 
-The middle context gets the same value back on every call too, and so does every context after it.\
-Sending it on costs one full payload the first time a given peer sees it, and just the reference on every send after that.
+Sending it costs the full payload the first time a given peer sees it, and only a small reference on every send after that.
 
 One thing to note is that the value comes home the way it went out.\
-Each context resolves an identity for the peers it exchanged it with, so the return trip retraces the same hops. Handing the value to a context by a different route gives that context a separate reference, tied to whoever sent it rather than to the origin.
+Each context resolves identities per peer, so if the same value reaches a context through two different routes, that context ends up with two different references, each tied to whoever sent it.
 
-### Lifetime and cleanup
+### Lifetime
 
-Primitives pass through `identity()` untouched, since there is no reference to keep.\
-Marking the same value twice does nothing extra either, you get your value straight back both times.
+Each side only holds on to the peer's identities for as long as the original value is alive.\
+When your value gets garbage collected, osra tells the peer to drop its copy, and a peer that had passed it further along tells its own peer in turn, so a chain unwinds from the origin outward.
 
-One thing to note is that each side only holds on to the other's identities for as long as the original value is alive.\
-When your value gets garbage collected, osra tells the peer to drop its cached copy, and a peer that was passing it further along does the same for its own peer, so a chain unwinds from the origin outward.
+A few small things worth knowing:
 
-Note: unique symbols (`Symbol()`) ride this machinery automatically, which is why they keep their identity across a connection without you wrapping anything, as covered in [supported types](/guides/supported-types/#symbols).
+- Primitives pass through `identity()` untouched, there is no reference to keep.
+- Marking the same value twice does nothing extra.
+- Unique symbols (`Symbol()`) ride this machinery automatically, which is why they keep their identity across a connection without you wrapping anything, see [supported types](/guides/supported-types/#symbols).
 
 ## transfer()
 
-Osra copies transferable values by default, just like calling `postMessage()` without a transfer list.\
-Wrapping the value in `transfer(value)` moves it instead, which is the difference between duplicating 16 MB of pixels and handing over a pointer.
+Osra copies transferable values by default, just like `postMessage()` does when you don't give it a transfer list.\
+Wrapping a value in `transfer()` moves it instead, which is the difference between duplicating 16 MB of pixels and handing over a pointer:
 
 ```ts twoslash
 import { transfer } from 'osra'
@@ -152,10 +157,10 @@ await render(transfer(pixels))
 pixels.byteLength // 0, it now belongs to the peer
 ```
 
-[Transfer semantics](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects) are the platform's, so the value is detached on your side once it ships.\
-Trying to read it afterwards is an error, and that is the point: there is only ever one owner.
+[Transfer semantics](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects) are the platform's: the moment the value ships, it is detached on your side, and reading it afterwards is an error.\
+There is only ever one owner.
 
-The following table summarizes what wrapping each kind of value does on a structured transport:
+Here is what wrapping each kind of value does on a structured transport:
 
 | Value | Default | Wrapped in `transfer()` |
 |---|---|---|
@@ -169,43 +174,45 @@ The following table summarizes what wrapping each kind of value does on a struct
 | `MessagePort`, `TransformStream`, `OffscreenCanvas` | moved anyway | moved anyway |
 | `SharedArrayBuffer` | shared | shared, see below |
 
-Anything else passes through `transfer()` unchanged, so wrapping a plain object is harmless rather than an error, and wrapping the same value twice does nothing extra.\
-Also keep in mind that a [custom transport](/guides/custom-transports-and-relays/#transferables) only moves values when its `emit` forwards the transferables list, otherwise everything falls back to a copy.
+Anything else passes through `transfer()` unchanged, so wrapping a plain object is harmless, and wrapping the same value twice does nothing extra.
+
+Keep in mind that a [custom transport](/guides/custom-transports-and-relays/#transferables) only moves values when its `emit` forwards the transferables list.\
+Otherwise everything falls back to a copy.
 
 ### Typed arrays and DataView
 
-A typed array that spans its whole buffer moves that backing `ArrayBuffer`, detaching it on your side.\
-A view that only covers part of its buffer only ever ships the bytes it can see, so its window is sliced out first and the slice is what moves, leaving your original buffer intact.
+A typed array that spans its whole buffer moves that buffer, detaching it on your side.\
+A view over part of a buffer only ever ships the bytes it can see, so that window is sliced out first and the slice is what moves, leaving your buffer intact:
 
 ```ts
 transfer(new Uint8Array(buffer))          // moves, buffer is detached
 transfer(new Uint8Array(buffer, 8, 4))    // ships those 4 bytes, buffer is fine
 ```
 
-`DataView` behaves differently: since 0.6.6, wrapping one moves its backing buffer, and it always moves the entire buffer, even when the view only covers part of it.\
-The view arrives on the other side with its window intact over the moved buffer, and the whole buffer is detached on yours.
+`DataView` is the exception: wrapping one always moves its entire backing buffer, even when the view only covers part of it.\
+The view arrives with its window intact over the moved buffer, and the whole buffer is detached on your side.
 
 ### Streams
 
-`ReadableStream` and `WritableStream` are always [proxied chunk by chunk](/guides/revivables/#readablestream), the stream itself is never moved.\
-Wrapping one in `transfer()` keeps that proxying exactly as it is, and instead moves every transferable found inside each chunk rather than copying it.
+A `ReadableStream` or a `WritableStream` is always proxied chunk by chunk, the stream itself never moves.\
+Wrapping one in `transfer()` keeps that proxying exactly as it is, and moves every transferable found inside each chunk instead of copying it.\
+The same goes for the body of a wrapped `Request` or `Response`.
 
-Wrapping a `Request` or `Response` does the same thing for its body stream.\
-The details, including per-chunk wrapping and the detach caveats, are covered in [revivables](/guides/revivables/#readablestream).
+The details, including per-chunk wrapping and the detach caveats, are in [revivables](/guides/revivables/#readablestream).
 
 ### Values that always move
 
-Some host objects cannot be copied by structured clone at all, so on a structured transport they are moved whether you wrapped them or not:\
+Some host objects cannot be copied by structured clone at all, so on a structured transport they move whether you wrapped them or not:\
 `MessagePort`, `TransformStream`, `OffscreenCanvas`, `MediaStreamTrack`, `MediaSourceHandle`, `MIDIAccess`, `RTCDataChannel`, `WebTransportSendStream`, `WebTransportReceiveStream`.
 
-This means that sending one of these detaches it locally, every time.
+This means that sending one of these detaches it on your side, every time.
 
-`SharedArrayBuffer` is the opposite case: it is neither copied nor moved, both contexts simply end up looking at the same memory.
+`SharedArrayBuffer` is the opposite case: it is neither copied nor moved, both contexts simply look at the same memory.
 
 ### JSON transports
 
-A JSON transport cannot move anything, because there is no ownership to hand over in a text protocol.\
-On those, `transfer()` quietly degrades back to a copy: same code, no error.
+A JSON transport cannot move anything, there is no memory to hand over in a text protocol.\
+On those, `transfer()` quietly degrades to a copy: same code, no error.
 
-One thing to note is that most of the values in the table above are not available on JSON transports at all, see the [supported types](/guides/supported-types/) table.\
+Most of the values in the table above are not available on JSON transports at all, see the [supported types](/guides/supported-types/) table.\
 `MessagePort` still works there because osra proxies it instead of moving it.

@@ -9,6 +9,7 @@ import * as identityTests from './identity'
 import * as identityChain from './identity-chain'
 import * as transferTests from './transfer'
 import * as eventPort from './event-port'
+import * as gettingStarted from './getting-started'
 import * as lifecycle from './lifecycle'
 import * as messageChannel from './message-channel-transport'
 import * as platformTransports from './platform-transports'
@@ -46,6 +47,7 @@ export const gcTests: Readonly<Record<string, (transport: Transport) => Promise<
 export const standaloneTests: Readonly<Record<string, Readonly<Record<string, () => Promise<void>>>>> = {
   ConnectionContext: fns(connectionContext),
   EventPort: fns(eventPort),
+  GettingStarted: fns(gettingStarted),
   IdentityChain: fns(identityChain),
   Lifecycle: fns(lifecycle),
   MessageChannelTransport: fns(messageChannel),

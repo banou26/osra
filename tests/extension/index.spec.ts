@@ -32,6 +32,8 @@ test.beforeAll(async () => {
   context = await chromium.launchPersistentContext('', {
     headless: false,
     args: [
+      // headful is required to load an extension, so this launch must not be able to make noise
+      '--mute-audio',
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,
     ],

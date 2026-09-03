@@ -1,6 +1,7 @@
 import type { Transport } from '../../src'
 
 import { base } from './base-tests'
+import * as base64 from './base64'
 import { baseMemory } from './base-memory-tests'
 import { gc } from './gc-tests'
 import * as connectionContext from './connection-context'
@@ -47,6 +48,7 @@ export const gcTests: Readonly<Record<string, (transport: Transport) => Promise<
   fns(gc)
 
 export const standaloneTests: Readonly<Record<string, Readonly<Record<string, () => Promise<void>>>>> = {
+  Base64: fns(base64),
   ConnectionContext: fns(connectionContext),
   EventPort: fns(eventPort),
   GettingStarted: fns(gettingStarted),

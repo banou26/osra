@@ -9,6 +9,7 @@ import type { IsJsonOnlyTransport } from '../utils/type-guards.js'
 
 import { OSRA_BOX } from '../types.js'
 import { isJsonOnlyTransport } from '../utils/type-guards.js'
+import { base64ToBytes, bytesToBase64 } from '../utils/base64.js'
 
 export type { UnderlyingType } from '../utils/type.js'
 
@@ -76,11 +77,11 @@ export const boxBuffer = <TCtx extends RevivableContext>(
   context: TCtx,
 ): BoxedBuffer<TCtx> =>
   (isJsonOnlyTransport(context.transport)
-    ? { base64Buffer: new Uint8Array(buffer).toBase64() }
+    ? { base64Buffer: bytesToBase64(new Uint8Array(buffer)) }
     : { arrayBuffer: buffer }
   ) as BoxedBuffer<TCtx>
 
 export const reviveBuffer = (boxed: { arrayBuffer: ArrayBuffer } | { base64Buffer: string }): ArrayBuffer =>
   'arrayBuffer' in boxed
     ? boxed.arrayBuffer
-    : Uint8Array.fromBase64(boxed.base64Buffer).buffer
+    : base64ToBytes(boxed.base64Buffer).buffer

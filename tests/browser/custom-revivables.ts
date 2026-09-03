@@ -113,3 +113,53 @@ export const callArgsAreWalkedOnce = async (transport: Transport) => {
   expect(await remote.take({ probe: 'walk' })).to.equal('walk')
   expect(probeVisits).to.equal(1)
 }
+
+/** A revive that throws must not escape the port listener.
+ *
+ *  `identity` throws on purpose once it has asked the sender to drop a record it cannot resolve, so
+ *  the walk has to be able to fail without taking the connection with it. A browser reports a throw
+ *  from a listener to the page and carries on, node re-raises it as an uncaughtException, so the
+ *  same protocol event was a console line on one host and fatal on the other. The port now drops the
+ *  message and dispatches `messageerror`, which is the channel a stream already turns into an error,
+ *  so this reads the same on every runtime. */
+class Boom {}
+
+const boomModule = {
+  type: 'boom' as const,
+  objectsOnly: true,
+  isType: (value: unknown): value is Boom => value instanceof Boom,
+  box: (_value: Boom, _context: RevivableContext) => ({ ...BoxBase, type: 'boom' as const }),
+  revive: (_value: { type: 'boom' }, _context: RevivableContext): Boom => {
+    throw new Error('boom: revive refused this value')
+  },
+} as const satisfies RevivableModule
+
+const withBoom = <TDefaults extends readonly RevivableModule[]>(defaults: TDefaults) =>
+  [boomModule, ...defaults] as const
+
+export const aRevivingChunkThatThrowsErrorsTheStream = async (transport: Transport) => {
+  const value = {
+    boomStream: () => new ReadableStream<Boom>({
+      start(controller) {
+        controller.enqueue(new Boom())
+      },
+    }),
+    ping: async () => 'pong',
+  }
+  expose(value, { transport, revivableModules: withBoom })
+
+  const remote = await expose<typeof value, ReturnType<typeof withBoom>>(
+    {},
+    { transport, revivableModules: withBoom },
+  )
+
+  const reader = (await remote.boomStream()).getReader()
+  const outcome = await Promise.race([
+    reader.read().then(() => 'resolved', (error: unknown) => `rejected:${(error as Error).message}`),
+    new Promise<string>(resolve => setTimeout(() => resolve('hung'), 2_000)),
+  ])
+  expect(outcome, 'the chunk that could not be revived errors the stream').to.contain('failed to deserialize')
+
+  // and the connection is still usable, which is the whole point of containing the throw
+  expect(await remote.ping()).to.equal('pong')
+}

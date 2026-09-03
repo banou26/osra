@@ -36,6 +36,7 @@ export const transportTests: Readonly<Record<string, Readonly<Record<string, (tr
     userPointReturn: customRevivables.userPointReturn,
     userPointDefaultsStillWork: customRevivables.userPointDefaultsStillWork,
     callArgsAreWalkedOnce: customRevivables.callArgsAreWalkedOnce,
+    aRevivingChunkThatThrowsErrorsTheStream: customRevivables.aRevivingChunkThatThrowsErrorsTheStream,
   },
 }
 

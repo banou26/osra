@@ -190,6 +190,31 @@ const postRevived = <T>(port: AnyPort<T>, data: T, synthetic: boolean) => {
   markPortsShipped(transferables)
 }
 
+/** Revives an inbound port message and hands it to `deliver`, or drops it and calls `onError`.
+ *  A revive failure used to leave the port listener as a throw. A browser reports a throw from a
+ *  listener to the page and moves on, where node re-raises it as an uncaughtException that ends the
+ *  process, so the same protocol event was a console line on one host and fatal on the other.
+ *  `identity` throws on purpose once it has asked the sender to drop its record, so dropping the one
+ *  message is all that is left to do here; the connection and the other buffered port messages carry
+ *  on. The host still gets the report where it offers a non-fatal channel for one (`reportError`),
+ *  which keeps a browser console reading as it did. */
+const reviveInbound = <T>(
+  data: Capable,
+  context: RevivableContext,
+  deliver: (revived: T) => void,
+  onError: () => void,
+): void => {
+  let revived: T
+  try {
+    revived = recursiveRevive(data, context) as T
+  } catch (error) {
+    onError()
+    globalThis.reportError?.(error)
+    return
+  }
+  deliver(revived)
+}
+
 // MUST stay in its own scope: sharing box()'s environment record would let the FR-held closure pin context/liveRef/handlers, breaking the gc-tracker contract
 const makeBoxGcNet = (
   contextWeak: WeakRef<RevivableContext>,
@@ -273,7 +298,8 @@ export const box = <T, T2 extends RevivableContext = RevivableContext>(
       liveRef.close()
       return
     }
-    postRevived(liveRef, recursiveRevive(message.data, context) as T, false)
+    // the message would have landed on the end the user holds, which a real MessagePort cannot reach from here
+    reviveInbound<T>(message.data, context, revived => postRevived(liveRef, revived, false), () => {})
   }
 
   function outgoingListener({ data }: MessageEvent<Capable>) {
@@ -358,7 +384,12 @@ const createProtocolPort = <T>(
 ): TypedMessagePort<T> => {
   const target = new EventTarget() as TypedMessagePort<T>
   const onMessage = ({ data }: MessageEvent<Capable>): void => {
-    target.dispatchEvent(new MessageEvent('message', { data: recursiveRevive(data, ctx) }))
+    reviveInbound<T>(
+      data,
+      ctx,
+      revived => target.dispatchEvent(new MessageEvent('message', { data: revived })),
+      () => target.dispatchEvent(new Event('messageerror')),
+    )
   }
   // A message the platform cannot deserialize (e.g. Gecko dropping a transferred VideoFrame)
   // is silently discarded by the port; forward it so consumers can error instead of losing data.
@@ -460,7 +491,12 @@ const reviveViaPortId = <T extends Capable>(
     }
     const internal = internalPortRef.deref()
     if (!internal) return
-    postRevived(internal, recursiveRevive(message.data, context) as T, synthetic)
+    reviveInbound<T>(
+      message.data,
+      context,
+      revived => postRevived(internal, revived, synthetic),
+      () => userPortRef.deref()?.dispatchEvent(new Event('messageerror')),
+    )
   }
 
   const internalPortListener = ({ data }: MessageEvent<T>) => {

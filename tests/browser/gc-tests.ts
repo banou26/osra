@@ -271,8 +271,80 @@ export const identityOutlivesTheContextThatMintedIt = async (_transport: Transpo
     .to.equal(true)
 }
 
+/** What the middle context sees once the chain has unwound past it.
+ *
+ *  Context 2 losing its copy and context 3 losing its record are the SAME event: the registry
+ *  callback that deletes the record is the one that sends the dispose. So there is no state where
+ *  context 2 still resolves an id that context 3 has forgotten. What matters is what happens next,
+ *  when context 3 hands the value back down: context 2 cannot resolve to the copy it let go, so it
+ *  revives a fresh one, but the id travels with the value, so the pair stabilises on that object and
+ *  a send back still lands on the object context 3 never stopped holding. Same identity, new local
+ *  object for the context that forgot. */
+export const identityRebindsOnTheContextThatForgot = async (_transport: Transport) => {
+  const seen = { disposesAtC3: 0 }
+  const countingPair = () => {
+    const { port1, port2 } = new MessageChannel()
+    const side = (port: MessagePort, count: boolean): Transport => ({
+      emit: (message, transferables) => { port.postMessage(message, transferables ?? []) },
+      receive: (listener) => {
+        port.addEventListener('message', event => {
+          const message = (event as MessageEvent).data as { type?: string }
+          if (count && message?.type === 'identity-dispose') seen.disposesAtC3++
+          listener(message as never, {})
+        })
+        port.start()
+      },
+    })
+    return [side(port1, false), side(port2, true)] as const
+  }
+
+  type Shared = { tag: string }
+  const kept = new Set<Shared>()
+  const c3Api = {
+    keep: async (value: Shared) => { kept.add(value); return kept.size },
+    isTheOneIKept: async (value: Shared) => kept.has(value),
+    sendBack: async () => [...kept][0] as Shared,
+  }
+  const [toC3, atC3] = countingPair()
+  expose(c3Api, { transport: atC3 })
+  const c3 = await expose<typeof c3Api>({}, { transport: toC3 })
+
+  // context 2 keeps nothing at first, so it lets go when context 1 does, then holds what it pulls back
+  let c2Held: Shared | undefined
+  const c2Api = {
+    keep: async (value: Shared) => c3.keep(value),
+    pull: async () => { c2Held = await c3.sendBack(); return c2Held.tag },
+    pullAgainIsTheSameObject: async () => (await c3.sendBack()) === c2Held,
+    pushBackLandsOnTheOneC3Kept: async () => c3.isTheOneIKept(c2Held as Shared),
+  }
+  const { port1, port2 } = new MessageChannel()
+  expose(c2Api, { transport: port2 })
+  const c2 = await expose<typeof c2Api>({}, { transport: port1 })
+
+  const ownedRef = await (async () => {
+    const owned: Shared = { tag: 'shared' }
+    const ref = new WeakRef(owned)
+    await c2.keep(identity(owned))
+    return ref
+  })()
+
+  for (let i = 0; i < 12 && ownedRef.deref() !== undefined; i++) await __osraForceGc()
+  expect(ownedRef.deref(), 'context 1 let its own value go').to.equal(undefined)
+  for (let i = 0; i < 12 && seen.disposesAtC3 === 0; i++) await __osraForceGc()
+  // the dispose is what deletes context 2's record too, so this is the control for BOTH halves
+  expect(seen.disposesAtC3, 'context 2 let go, which is what forgets the id on both sides')
+    .to.be.greaterThan(0)
+
+  await c2.pull()
+  expect(await c2.pullAgainIsTheSameObject(), 'context 2 settles on one object for the id it re-learned')
+    .to.equal(true)
+  expect(await c2.pushBackLandsOnTheOneC3Kept(), 'and it still resolves to the object context 3 never let go of')
+    .to.equal(true)
+}
+
 export const gc = {
   identityChainUnwindsFromTheOrigin,
+  identityRebindsOnTheContextThatForgot,
   identityDropReleasesThePeersPin,
   identityOutlivesTheContextThatMintedIt,
   gcBracketCollectsUnreferencedObject,

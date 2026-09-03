@@ -56,7 +56,12 @@ export const nodeTransports: readonly NodeTransportEntry[] = [
     name: 'Node',
     factory: structuredLoopback,
     memoryIterations: 20_000,
-    memoryThreshold: 1_000_000,
+    // process.memoryUsage().heapUsed is a coarser instrument than the browser's CDP heap size, and a
+    // shared CI runner is noisier than a quiet desktop: the heaviest test grew 0.05 MB locally and
+    // 1.25 MB on a GitHub runner, which failed a 1 MB gate. Measured 2026-09-04, the same test
+    // retaining one small object per iteration grows 3.3 MB on top of whatever the run's noise is, so
+    // this still gates a real leak with room either side.
+    memoryThreshold: 2_500_000,
   },
   {
     name: 'NodeJSON',

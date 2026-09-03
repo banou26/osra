@@ -199,9 +199,82 @@ const identityChainUnwindsFromTheOrigin = async (_transport: Transport) => {
   expect(farRef.deref(), 'the far pin is released when the middle value goes with it').to.equal(undefined)
 }
 
+
+/** An identity shared down a chain outlives the context that minted it.
+ *
+ *  Context 1 marks a value and hands it to context 2, which forwards it to context 3, which keeps
+ *  it. Context 1 then lets go and its value is collected, so a dispose travels outward hop by hop.
+ *  What context 3 still holds must keep its identity: a value coming back to it has to land on that
+ *  same object, not on a fresh copy. A dispose says the peer forgot the id, which says nothing about
+ *  whether this side still holds the value, and conflating those two was what broke this.
+ *
+ *  The dispose arriving at context 3 is asserted BEFORE the round trip, because without it the round
+ *  trip would pass on any build and prove nothing. */
+export const identityOutlivesTheContextThatMintedIt = async (_transport: Transport) => {
+  const seen = { disposesAtC3: 0 }
+  const countingPair = () => {
+    const { port1, port2 } = new MessageChannel()
+    const side = (port: MessagePort, count: boolean): Transport => ({
+      emit: (message, transferables) => { port.postMessage(message, transferables ?? []) },
+      receive: (listener) => {
+        port.addEventListener('message', event => {
+          const message = (event as MessageEvent).data as { type?: string }
+          if (count && message?.type === 'identity-dispose') seen.disposesAtC3++
+          listener(message as never, {})
+        })
+        port.start()
+      },
+    })
+    return [side(port1, false), side(port2, true)] as const
+  }
+
+  type Shared = { tag: string }
+  // context 3, the far end, keeps whatever it is handed for the whole test
+  const kept = new Set<Shared>()
+  const c3Api = {
+    keep: async (value: Shared) => { kept.add(value); return kept.size },
+    isTheOneIKept: async (value: Shared) => kept.has(value),
+    sendBack: async () => [...kept][0] as Shared,
+  }
+  const [toC3, atC3] = countingPair()
+  expose(c3Api, { transport: atC3 })
+  const c3 = await expose<typeof c3Api>({}, { transport: toC3 })
+
+  // context 2 forwards both ways and keeps nothing, so it lets go once context 1 does
+  const c2Api = {
+    keep: async (value: Shared) => c3.keep(value),
+    isTheOneIKept: async (value: Shared) => c3.isTheOneIKept(value),
+    sendBack: async () => c3.sendBack(),
+  }
+  const { port1, port2 } = new MessageChannel()
+  expose(c2Api, { transport: port2 })
+  const c2 = await expose<typeof c2Api>({}, { transport: port1 })
+
+  // its own scope, so no sibling closure of this test keeps the value reachable
+  const ownedRef = await (async () => {
+    const owned: Shared = { tag: 'shared' }
+    const ref = new WeakRef(owned)
+    await c2.keep(identity(owned))
+    return ref
+  })()
+
+  for (let i = 0; i < 12 && ownedRef.deref() !== undefined; i++) await __osraForceGc()
+  expect(ownedRef.deref(), 'context 1 let its own value go').to.equal(undefined)
+
+  // the unwind is one collection per hop, so it needs more than one bracket
+  for (let i = 0; i < 12 && seen.disposesAtC3 === 0; i++) await __osraForceGc()
+  expect(seen.disposesAtC3, 'the dispose reached context 3, without which the next assertion proves nothing')
+    .to.be.greaterThan(0)
+
+  const back = await c2.sendBack()
+  expect(await c2.isTheOneIKept(back), 'context 3 resolves the round trip to the value it still holds')
+    .to.equal(true)
+}
+
 export const gc = {
   identityChainUnwindsFromTheOrigin,
   identityDropReleasesThePeersPin,
+  identityOutlivesTheContextThatMintedIt,
   gcBracketCollectsUnreferencedObject,
   revivedEventTargetDroppedWithoutListenerIsCollected,
   revivedFunctionDroppedIsCollected,

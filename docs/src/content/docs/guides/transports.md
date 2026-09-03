@@ -347,6 +347,7 @@ One thing to note is that a [`worker_threads`](https://nodejs.org/api/worker_thr
 On the main side, the `Worker` object is an event emitter rather than an event target, so wrap it in a small [custom transport](/guides/custom-transports-and-relays/):
 
 ```ts twoslash title="worker.ts"
+// @types: node
 type Payload = { mult: (a: number, b: number) => number }
 // ---cut---
 import { parentPort } from 'node:worker_threads'
@@ -361,6 +362,7 @@ await mult(3, 7) // 21
 ```
 
 ```ts twoslash title="main.ts"
+// @types: node
 type Payload = { add: (a: number, b: number) => number }
 // ---cut---
 import type { TransferListItem } from 'node:worker_threads'

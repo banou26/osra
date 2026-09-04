@@ -36,4 +36,22 @@ for(const f of files){
   }
 }
 console.log(`[check-html] fragment links checked ${checked}, broken ${broken}`)
-process.exit(broken?1:0)
+
+// The twoslash pretty-printer is a build-time plugin whose absence is SILENT: the page still
+// builds, the message is still there, it just collapses back into one paragraph. So assert the
+// rewritten markup, and fail on zero boxes too, since a check that finds nothing to look at is
+// not a check.
+let boxes=0, flat=0
+for(const f of files){
+  const html=readFileSync(f,'utf8')
+  for(const m of html.matchAll(/<span class="twoslash-error-box-content-message">/g)){
+    boxes++
+    if(!html.slice(m.index,m.index+400).includes('osra-tserr-step')){
+      flat++
+      console.log(`   FLAT TWOSLASH ERROR ${'/'+relative(DIST,f)} at ${m.index}`)
+    }
+  }
+}
+console.log(`[check-html] twoslash error boxes ${boxes}, not pretty-printed ${flat}`)
+if(!boxes) console.log('   NO TWOSLASH ERROR BOXES FOUND, the check proves nothing')
+process.exit(broken||flat||!boxes?1:0)

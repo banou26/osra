@@ -1,6 +1,7 @@
 import { defineEcConfig } from 'astro-expressive-code'
 import ecTwoSlash from 'expressive-code-twoslash'
 import { definePlugin } from '@expressive-code/core'
+import { twoslashPrettyErrors } from './src/plugins/twoslash-pretty-errors.mjs'
 
 // Strip the machine-specific prefix so build output is identical across machines.
 const stripNodeModulesPaths = () =>
@@ -46,6 +47,8 @@ export default defineEcConfig({
         },
       },
     }),
+    // after ecTwoSlash: both read the rendered block, and this one rewrites the error box it built
+    twoslashPrettyErrors(),
     stripNodeModulesPaths(),
   ],
 })

@@ -32,7 +32,7 @@ const trail = isHome ? [] : (findTrail(sidebar) ?? [{ label: entry.data.title }]
 ---
 
 <div class="osra-header">
-  <div class="osra-nav">
+  <div class:list={['osra-nav', !hasSidebar && 'no-menu']}>
     <div class="osra-nav-start">
       <a href={siteTitleHref} class="osra-brand" translate="no">
         <svg width="27" height="27" viewBox="0 0 64 64" fill="none" aria-hidden="true" class="osra-mark">
@@ -50,7 +50,7 @@ const trail = isHome ? [] : (findTrail(sidebar) ?? [{ label: entry.data.title }]
     </div>
   </div>
 
-  <div class="osra-crumb">
+  <div class:list={['osra-crumb', !trail.length && 'is-bare']}>
     <nav class="osra-crumb-trail" aria-label="Breadcrumb">
       {
         trail.map((c, i) => (
@@ -188,6 +188,8 @@ const trail = isHome ? [] : (findTrail(sidebar) ?? [{ label: entry.data.title }]
     text-overflow: ellipsis;
   }
   .osra-crumb-end { display: flex; align-items: center; flex: none; }
+  /* the landing page: no trail to underline, so the row keeps its height for the theme control and loses the bar */
+  .osra-crumb.is-bare { border-bottom-color: transparent; }
 
   /* Reused Starlight bits: trim ThemeSelect chrome to a compact control. */
   .osra-crumb-end :global(starlight-theme-select) { display: flex; }
@@ -196,6 +198,8 @@ const trail = isHome ? [] : (findTrail(sidebar) ?? [{ label: entry.data.title }]
     .osra-nav-end { max-width: none; flex: none; }
     /* Reserve room on the right for Starlight's fixed sidebar toggle. */
     .osra-nav { padding-inline-end: calc(var(--sl-nav-pad-x) + var(--sl-menu-button-size) + 0.5rem); }
+    /* no sidebar means no menu button, so nothing to make room for */
+    .osra-nav.no-menu { padding-inline-end: calc(var(--osra-gutter, 0px) + var(--sl-nav-pad-x)); }
   }
   @media (max-width: 30rem) {
     .osra-wordmark { font-size: 1rem; }

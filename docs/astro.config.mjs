@@ -6,17 +6,18 @@ import { satteriCodeLinks } from './src/plugins/satteri-code-links.mjs'
 // this file. An astro integration could not do it: the config is evaluated before the earliest hook.
 import { apiSidebar } from './src/lib/api-sidebar.generated.mjs'
 
+const site = 'https://osra.banou.dev'
+// public/og.png, drawn by scripts/gen-og-image.mjs. Unfurlers want an absolute URL, and
+// scripts/check-html.mjs verifies the built page points at a file of the declared size.
+const ogImage = { href: `${site}/og.png`, width: '1200', height: '630' }
+
 export default defineConfig({
-  site: 'https://osra.banou.dev',
+  site,
   // satteri is already the default processor in astro 7; naming it here is what lets the code-link
   // plugin in. markdown.rehypePlugins would be skipped, since it only applies to the legacy
   // unified processor.
   markdown: {
     processor: satteri({ hastPlugins: [satteriCodeLinks] }),
-  },
-  // the static build emits a meta-refresh page for local preview, while public/_redirects gives production a real 302 on Cloudflare Pages
-  redirects: {
-    '/': '/general/getting-started'
   },
   integrations: [
     starlight({
@@ -25,6 +26,16 @@ export default defineConfig({
         'Documentation for osra, the zero-dependency TypeScript RPC library that connects two JavaScript contexts over any message channel.',
       logo: { src: './src/assets/logo.svg', alt: 'osra' },
       favicon: '/favicon.svg',
+      head: [
+        // the brand blue: Discord and Safari paint the embed and tab accent from it
+        { tag: 'meta', attrs: { name: 'theme-color', content: '#4f9cf0' } },
+        { tag: 'meta', attrs: { property: 'og:image', content: ogImage.href } },
+        { tag: 'meta', attrs: { property: 'og:image:type', content: 'image/png' } },
+        { tag: 'meta', attrs: { property: 'og:image:width', content: ogImage.width } },
+        { tag: 'meta', attrs: { property: 'og:image:height', content: ogImage.height } },
+        { tag: 'meta', attrs: { property: 'og:image:alt', content: 'osra: typed RPC across JavaScript contexts' } },
+        { tag: 'meta', attrs: { name: 'twitter:image', content: ogImage.href } },
+      ],
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/Banou26/osra' },
         { icon: 'npm', label: 'npm', href: 'https://www.npmjs.com/package/osra' },

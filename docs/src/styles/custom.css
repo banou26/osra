@@ -277,8 +277,27 @@ starlight-toc nav a[aria-current='true'] {
   background: var(--o-brand-soft);
 }
 
-.hero a[href].sl-flex {
+/* The landing page (the only splash template). Starlight widens a page with no sidebar to 67.5rem, which
+ * is right for the code frames and 131 characters a line for the prose, so only the prose is held to the
+ * width the other pages read at. */
+.hero .sl-link-button {
   border-radius: 14px;
+}
+/* the accent on white measured 3.94:1, under AA; the pressed shade measures 5.25:1 */
+:root[data-theme='light'] .sl-link-button.primary {
+  background: var(--o-brand-press);
+  border-color: var(--o-brand-press);
+}
+.hero .tagline p + p {
+  margin-top: 0.6rem;
+}
+html:not([data-has-sidebar]) .sl-markdown-content > :is(p, ul, ol, blockquote) {
+  max-width: calc(46rem + 10px);
+}
+@media (min-width: 50rem) {
+  .hero {
+    padding-block-end: 3.5rem;
+  }
 }
 
 /* Starlight centres its fixed sidebar toggle against the whole --sl-nav-height; Header.astro reserves the matching right padding on the nav row */

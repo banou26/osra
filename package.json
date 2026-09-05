@@ -59,6 +59,7 @@
     "test-extension": "npm run build-extension-test && npx playwright test -c playwright.extension.config.ts",
     "check-consumer-types": "npm run build && node ./node_modules/typescript7/bin/tsc --noEmit -p tsconfig.consumer.json",
     "check-declaration-imports": "node scripts/check-declaration-imports.mjs",
+    "check-error-chain": "node scripts/check-error-chain.mjs",
     "check-consumer-types-legacy-lib": "npm run build && node ./node_modules/typescript7/bin/tsc --noEmit -p tsconfig.consumer-lib.json",
     "docs-dev": "npm run dev -w docs",
     "docs-build": "npm run build -w docs",

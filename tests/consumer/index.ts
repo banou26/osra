@@ -46,6 +46,11 @@ expose({
   nested: { deep: [{ ok: true }] },
 }, { transport: worker, key: 'capable-3' })
 
+// a value typed as a union infers as a whole. Until 2026-09-05 the value parameter was a union with its
+// Contextual<> wrapper, and TypeScript inferred each member separately and kept only the first
+declare const either: { v: string } | { v: number }
+expose(either, { transport: worker, key: 'union-value' })
+
 declare const jsonTransport: { isJson: true, emit: Worker, receive: Worker }
 // @ts-expect-error File is only supported on structured-clone transports
 expose({ foo: new File([], '') }, { transport: jsonTransport, key: 'json-1' })

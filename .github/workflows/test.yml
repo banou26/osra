@@ -30,6 +30,9 @@ jobs:
       # the same surface under an older TypeScript lib: shipped declarations must not name types
       # that only newer libs declare (Float16ArrayConstructor did, and took the Capable checks with it)
       - run: npm run check-consumer-types-legacy-lib
+      # the compile error for a value that cannot cross is two lines, the second naming the bad field;
+      # a union in the value parameter type adds a third and rejects union-typed values
+      - run: npm run check-error-chain
       - run: npm test
       # the extension suite needs a headed browser with a display, so it is intentionally not part of CI
 

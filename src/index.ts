@@ -103,9 +103,14 @@ export const expose = <
   const TValue = Capable<TModules, RevivableContextOf<TTransport>>,
   TResult = Remote<T>
 >(
-  value:
-    | CapableCheck<TValue, TModules, RevivableContextOf<TTransport>>
-    | Contextual<CapableCheck<TValue, TModules, RevivableContextOf<TTransport>>>,
+  // one conditional, not `CapableCheck<...> | Contextual<CapableCheck<...>>`. A union here costs one
+  // step in every Capable error (a "not assignable to (T & {...}) | Contextual<...>" line before the
+  // one naming the bad field), and it made a union-typed value infer one member at a time and keep
+  // only the first. Measured 2026-09-05 on TypeScript 6.0.3 and 7.0.2; scripts/check-error-chain.mjs
+  // pins both.
+  value: TValue extends Contextual<infer U>
+    ? Contextual<CapableCheck<U, TModules, RevivableContextOf<TTransport>>>
+    : CapableCheck<TValue, TModules, RevivableContextOf<TTransport>>,
   // intersecting instead of omitting gives `connection` two signatures at once, and its parameter
   // degrades to a union of both
   options: Omit<StartConnectionsOptions<TModules>, 'connection'> & {

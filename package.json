@@ -2,15 +2,15 @@
   "name": "osra",
   "version": "0.6.12",
   "description": "Easy communication between workers",
-  "homepage": "https://github.com/Banou26/osra#readme",
+  "homepage": "https://github.com/banou26/osra#readme",
   "bugs": {
-    "url": "https://github.com/Banou26/osra/issues"
+    "url": "https://github.com/banou26/osra/issues"
   },
   "license": "MIT",
   "author": "Banou26",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Banou26/osra.git"
+    "url": "git+https://github.com/banou26/osra.git"
   },
   "files": [
     "build"

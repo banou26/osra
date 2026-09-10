@@ -396,4 +396,4 @@ Two optional module fields exist to support this pattern:
 - `init(context)` runs once per connection when it starts, before the first value is boxed, in the order of the module list. It is the place to set up per connection state and attach a single `eventTarget` listener, instead of one per revived value like above.
 - `Messages` declares, at the type level, the message variants your module sends, so that `Message<YourModules>` includes them. Every custom message must carry a literal `type` string and the `remoteUuid` of the connection.
 
-If you want to go further, the built-in modules in [`src/revivables/`](https://github.com/Banou26/osra/tree/main/src/revivables) are the reference implementations, with `message-port.ts` being the canonical example of the full pattern.
+If you want to go further, the built-in modules in [`src/revivables/`](https://github.com/banou26/osra/tree/main/src/revivables) are the reference implementations, with `message-port.ts` being the canonical example of the full pattern.

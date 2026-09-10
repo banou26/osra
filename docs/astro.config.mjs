@@ -37,7 +37,7 @@ export default defineConfig({
         { tag: 'meta', attrs: { name: 'twitter:image', content: ogImage.href } },
       ],
       social: [
-        { icon: 'github', label: 'GitHub', href: 'https://github.com/Banou26/osra' },
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/banou26/osra' },
         { icon: 'npm', label: 'npm', href: 'https://www.npmjs.com/package/osra' },
       ],
       components: {

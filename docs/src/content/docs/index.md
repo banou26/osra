@@ -10,7 +10,7 @@ hero:
       link: /general/getting-started/
       icon: right-arrow
     - text: View on GitHub
-      link: https://github.com/Banou26/osra
+      link: https://github.com/banou26/osra
       variant: minimal
       icon: github
 # every other page is titled "Page | osra"; this page is the site, so its tab and link embed carry the whole title.

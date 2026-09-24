@@ -86,12 +86,13 @@
     "nyc": "^17.1.0",
     "playwright": "1.58.2",
     "typescript7": "npm:typescript@^7.0.2",
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4",
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.3",
     "vite-plugin-istanbul": "^8.0.0",
-    "vite-plus": "0.2.4",
+    "vite-plus": "0.3.3",
     "ws": "^8.21.0"
   },
   "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.2.4"
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.3",
+    "vitest": "4.1.11"
   }
 }

@@ -46,6 +46,7 @@
     "dev2": "concurrently \"npm run build-watch\" \"npm run build-test-watch\" \"npm run test-watch-headful\"",
     "test": "npm run build && npm run build-test && npx playwright test",
     "test-node": "npm run build && npm run build-test-node && node --expose-gc --test --test-force-exit build-test-node/node.js",
+    "test-toolchain": "node --test tests/node/toolchain.ts",
     "test-watch": "set PWTEST_WATCH=1 & npx playwright test",
     "test-watch-headful": "nodemon --watch build-test --exec \"npx playwright test --headed\"",
     "test-with-coverage": "VITE_COVERAGE=true npm run build-test && VITE_COVERAGE=true npx playwright test && npm run print-coverage && npm run clean-coverage",

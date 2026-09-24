@@ -20,6 +20,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # vite-plus, its vite alias and the vitest override move together; reads the lockfile only
+      - run: npm run test-toolchain
       - run: npx playwright install --with-deps chromium firefox webkit
       # build before type-check: examples/ import 'osra' via the package self-reference
       - run: npm run build

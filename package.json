@@ -1,6 +1,6 @@
 {
   "name": "osra",
-  "version": "0.6.12",
+  "version": "0.6.13",
   "description": "Easy communication between workers",
   "homepage": "https://github.com/banou26/osra#readme",
   "bugs": {

@@ -24,7 +24,10 @@ concurrency:
 
 jobs:
   publish:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # only a push to this repository's main: a fork's pull request from a branch named main also matches `branches`
+    if: >-
+      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:

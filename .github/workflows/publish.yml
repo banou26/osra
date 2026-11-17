@@ -14,9 +14,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  # reading the test workflow's runs is how a manual dispatch proves it was gated
-  actions: read
 
 concurrency:
   group: publish
@@ -24,20 +21,30 @@ concurrency:
 
 jobs:
   publish:
-    # only a push to this repository's main: a fork's pull request from a branch named main also matches `branches`
+    # Only a push to this repository's main: a fork's pull request from a branch named main also matches
+    # `branches`. On workflow_run the checkout is github.sha (main's tip), so the tested commit must be that
+    # one; a commit main has since moved past is released by the newer commit's own test run.
     if: >-
-      github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository)
+      github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_sha == github.sha
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      # reading the test workflow's runs is how a manual dispatch proves it was gated
+      actions: read
     outputs:
       publish: ${{ steps.version.outputs.publish }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          # publish exactly the commit the test run validated, not whatever main moved to since
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
       # A dispatch used to satisfy the gate by existing, so 0.6.6 went to npm 75 seconds before its
       # suite finished. The button stays, it just has to point at a commit `test` already passed on.
       - name: Require a green test run for this commit
@@ -45,20 +52,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          green=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?head_sha=${{ github.sha }}&status=completed" --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
-          echo "successful test runs for ${{ github.sha }}: ${green}"
+          green=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$GITHUB_SHA&status=completed" --jq '[.workflow_runs[] | select(.conclusion == "success")] | length')
+          echo "successful test runs for $GITHUB_SHA: ${green}"
           if [ "$green" -lt 1 ]; then
             echo "::error::no successful test run for this commit - wait for test, or dispatch again with force=true"
             exit 1
           fi
       # no registry-url here: setup-node would write an .npmrc auth line with a placeholder
-      # NODE_AUTH_TOKEN, which makes npm skip the OIDC exchange trusted publishing needs
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      # NODE_AUTH_TOKEN, which makes npm skip the OIDC exchange trusted publishing needs.
+      # No cache: a release installs from the lockfile only, never from a cache another run saved.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-          cache: npm
-      # trusted publishing (OIDC) needs npm >= 11.5.1, node 22 ships an older one
-      - run: npm install -g npm@latest
+      # trusted publishing (OIDC) needs npm >= 11.5.1, node 22 ships an older one. An exact version, so a
+      # new npm reaches the publish job only through a reviewed bump.
+      - name: Use an npm that supports trusted publishing
+        run: |
+          npm install -g npm@12.2.2
+          echo "npm $(npm --version)"
       - name: Skip when this version is already on the registry
         id: version
         run: |
@@ -87,21 +98,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           # --generate-notes diffs against the previous tag, which needs the history behind this one
           fetch-depth: 0
+          persist-credentials: false
       - name: Tag the published commit
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.publish.outputs.version }}
         run: |
-          tag="v${{ needs.publish.outputs.version }}"
+          tag="v$VERSION"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "$tag already exists, nothing to do"
             exit 0
           fi
           gh release create "$tag" \
-            --target "${{ github.event.workflow_run.head_sha || github.sha }}" \
+            --target "$GITHUB_SHA" \
             --title "$tag" \
             --generate-notes

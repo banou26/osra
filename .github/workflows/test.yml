@@ -55,3 +55,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test-node
+      # a CommonJS consumer's require('osra'), which Node serves an ES module from 22.12
+      - run: npm run test-require

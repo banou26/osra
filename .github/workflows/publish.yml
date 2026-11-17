@@ -42,7 +42,7 @@ jobs:
       publish: ${{ steps.version.outputs.publish }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # A dispatch used to satisfy the gate by existing, so 0.6.6 went to npm 75 seconds before its
@@ -61,7 +61,7 @@ jobs:
       # no registry-url here: setup-node would write an .npmrc auth line with a placeholder
       # NODE_AUTH_TOKEN, which makes npm skip the OIDC exchange trusted publishing needs.
       # No cache: a release installs from the lockfile only, never from a cache another run saved.
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       # trusted publishing (OIDC) needs npm >= 11.5.1, node 22 ships an older one. An exact version, so a
@@ -98,7 +98,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # --generate-notes diffs against the previous tag, which needs the history behind this one
           fetch-depth: 0

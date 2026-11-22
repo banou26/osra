@@ -2,7 +2,9 @@ import type { BoxBase, RevivableContext } from './utils.js'
 import type { DeepReplaceWithBox, DeepReplaceWithRevive } from '../utils/replace.js'
 import type { MessageFields, Capable } from '../types.js'
 
+import { OSRA_BOX } from '../types.js'
 import { isRevivableBox } from './utils.js'
+import { isQuotedBox, isQuotingBoxes } from './quote.js'
 import * as arrayBuffer from './array-buffer.js'
 import * as date from './date.js'
 import * as headers from './headers.js'
@@ -191,7 +193,33 @@ export const recursiveBox = <
   context: RevivableContext<TModules>
 ): DeepReplaceWithBox<T, TModules[number]> => {
   type ReturnCastType = DeepReplaceWithBox<T, TModules[number]>
-  if (isRevivableBox(value)) return value as ReturnCastType
+  if (isRevivableBox(value) || isQuotedBox(value)) {
+    if (!isQuotingBoxes()) return value as ReturnCastType
+    if (boxPath.has(value)) {
+      throw new TypeError('osra: cannot serialize a circular structure - break the cycle or send the container by reference')
+    }
+    boxPath.add(value)
+    boxDepth++
+    let failed = true
+    try {
+      const entries: [string, unknown][] = []
+      for (const [k, v] of Object.entries(value)) {
+        if (k === OSRA_BOX) continue
+        entries.push([k, recursiveBox(v as Capable, context)])
+      }
+      const wrapped = {
+        [OSRA_BOX]: 'quoted',
+        box: value[OSRA_BOX],
+        value: Object.fromEntries(entries),
+      } as ReturnCastType
+      failed = false
+      return wrapped
+    } finally {
+      boxPath.delete(value)
+      boxDepth--
+      if (boxDepth === 0) settleBoxWalk(failed)
+    }
+  }
   const track = isTrackable(value)
   if (track) {
     if (boxPath.has(value)) {
@@ -244,6 +272,10 @@ export const recursiveRevive = <
     revivePath.add(value)
   }
   try {
+    if (isQuotedBox(value)) {
+      const inner = descend<Record<string, unknown>>(value.value, v => recursiveRevive(v, context))
+      return { ...inner, [OSRA_BOX]: value.box } as ReturnCastType
+    }
     if (isRevivableBox(value)) {
       const handledByModule = findReviveModule(value, context.revivableModules)
       if (handledByModule) {

@@ -14,6 +14,7 @@ import * as gettingStarted from './getting-started'
 import * as lifecycle from './lifecycle'
 import * as messageChannel from './message-channel-transport'
 import * as platformTransports from './platform-transports'
+import * as portInPortTests from './port-in-port'
 import * as relayTests from './relay'
 import * as reorderTests from './reorder'
 import * as streamCompat from './stream-compat'
@@ -32,6 +33,10 @@ export const transportTests: Readonly<Record<string, Readonly<Record<string, (tr
   Base: base,
   Identity: fns(identityTests),
   Transfer: fns(transferTests),
+  PortInPort: {
+    osraRpcOverReturnedRelayedPort: portInPortTests.osraRpcOverReturnedRelayedPort,
+    osraRpcOverArgumentRelayedPort: portInPortTests.osraRpcOverArgumentRelayedPort,
+  },
   CustomRevivables: {
     userPoint: customRevivables.userPoint,
     userPointReturn: customRevivables.userPointReturn,
@@ -56,6 +61,14 @@ export const standaloneTests: Readonly<Record<string, Readonly<Record<string, ()
   Lifecycle: fns(lifecycle),
   MessageChannelTransport: fns(messageChannel),
   PlatformTransports: fns(platformTransports),
+  PortInPort: {
+    strictJsonPortInPortCarriesAllPayloads: portInPortTests.strictJsonPortInPortCarriesAllPayloads,
+    twoHopPortInPortRelayOverJson: portInPortTests.twoHopPortInPortRelayOverJson,
+    rawMessagesOverRelayedPortKeepBuffersAndSpecials: portInPortTests.rawMessagesOverRelayedPortKeepBuffersAndSpecials,
+    customRevivableOwnProtoOnRelayedPort: portInPortTests.customRevivableOwnProtoOnRelayedPort,
+    throwingBoxMarkerRollsBackWalk: portInPortTests.throwingBoxMarkerRollsBackWalk,
+    strictJsonRelayedPortPreservesIdentity: portInPortTests.strictJsonRelayedPortPreservesIdentity,
+  },
   Relay: fns(relayTests),
   Reorder: fns(reorderTests),
   StreamCompat: fns(streamCompat),

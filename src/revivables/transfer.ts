@@ -2,6 +2,7 @@ import type { Capable } from '../types.js'
 import type { BoxBase as BoxBaseType, RevivableContext, UnderlyingType } from './utils.js'
 
 import { BoxBase } from './utils.js'
+import { outsideQuoting } from './quote.js'
 import { instanceOfAny, isJsonOnlyTransport } from '../utils/type-guards.js'
 import { recursiveBox, recursiveRevive } from './index.js'
 
@@ -85,7 +86,7 @@ export const outsideTransfer = <T>(fn: () => T): T => {
   const saved = transferDepth
   transferDepth = 0
   try {
-    return fn()
+    return outsideQuoting(fn)
   } finally {
     transferDepth = saved
   }

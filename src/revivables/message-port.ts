@@ -9,6 +9,7 @@ import type {
 
 import { BoxBase } from './utils.js'
 import { outsideTransfer } from './transfer.js'
+import { withQuotedBoxes } from './quote.js'
 import { recursiveBox, recursiveRevive } from './index.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import { isJsonOnlyTransport } from '../utils/type-guards.js'
@@ -255,7 +256,7 @@ const boxUnlessPreBoxed = <TContext extends RevivableContext>(data: Capable, con
     ? data
     // outsideTransfer: liveRef.start() can flush queued messages synchronously while a transfer()
     // extent is on the stack - queued values are not part of it
-    : outsideTransfer(() => recursiveBox(data, context)) as Capable
+    : outsideTransfer(() => withQuotedBoxes(() => recursiveBox(data, context))) as Capable
 
 export const box = <T, T2 extends RevivableContext = RevivableContext>(
   value: StructurableTransferablePort<T>,

@@ -36,6 +36,8 @@ export const transportTests: Readonly<Record<string, Readonly<Record<string, (tr
   PortInPort: {
     osraRpcOverReturnedRelayedPort: portInPortTests.osraRpcOverReturnedRelayedPort,
     osraRpcOverArgumentRelayedPort: portInPortTests.osraRpcOverArgumentRelayedPort,
+    userBoxShapedObjectsPreserved: portInPortTests.userBoxShapedObjectsPreserved,
+    abortSignalDeferredBoxShapedReasonNoDoubleRevive: portInPortTests.abortSignalDeferredBoxShapedReasonNoDoubleRevive,
   },
   CustomRevivables: {
     userPoint: customRevivables.userPoint,
@@ -64,10 +66,16 @@ export const standaloneTests: Readonly<Record<string, Readonly<Record<string, ()
   PortInPort: {
     strictJsonPortInPortCarriesAllPayloads: portInPortTests.strictJsonPortInPortCarriesAllPayloads,
     twoHopPortInPortRelayOverJson: portInPortTests.twoHopPortInPortRelayOverJson,
+    threeHopPortInPortRelayOverJson: portInPortTests.threeHopPortInPortRelayOverJson,
+    threeLayerNestedQuotedBoxesRoundTrip: portInPortTests.threeLayerNestedQuotedBoxesRoundTrip,
+    circularBoxUnderQuotingThrowsAndRollsBack: portInPortTests.circularBoxUnderQuotingThrowsAndRollsBack,
     rawMessagesOverRelayedPortKeepBuffersAndSpecials: portInPortTests.rawMessagesOverRelayedPortKeepBuffersAndSpecials,
     customRevivableOwnProtoOnRelayedPort: portInPortTests.customRevivableOwnProtoOnRelayedPort,
     throwingBoxMarkerRollsBackWalk: portInPortTests.throwingBoxMarkerRollsBackWalk,
     strictJsonRelayedPortPreservesIdentity: portInPortTests.strictJsonRelayedPortPreservesIdentity,
+    relayedPortPreservesUserBoxShapedObjects: portInPortTests.relayedPortPreservesUserBoxShapedObjects,
+    quotedTransferOverEventPortThroughCloneChannel: portInPortTests.quotedTransferOverEventPortThroughCloneChannel,
+    clonableAndTransferableRejectOnJsonAndRawPort: portInPortTests.clonableAndTransferableRejectOnJsonAndRawPort,
   },
   Relay: fns(relayTests),
   Reorder: fns(reorderTests),

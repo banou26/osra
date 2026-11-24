@@ -55,7 +55,13 @@ export const clonable = {
   objectsOnly: true,
   isType: isClonable,
   // `revive` is never reached - `box` returns the raw value so isRevivableBox is false
-  box: (value: Clonable, _context: RevivableContext<any>): Clonable => value,
+  box: (value: Clonable, context: RevivableContext<any>): Clonable => {
+    if (isJsonOnlyTransport(context.transport)) {
+      const name = value.constructor?.name || 'Clonable'
+      throw new TypeError(`osra: ${name} is only supported on structured-clone transports`)
+    }
+    return value
+  },
   revive: (value: BoxedClonable, _context: RevivableContext<any>): Clonable => value as unknown as Clonable,
 } as const
 
@@ -89,7 +95,13 @@ export const transferable = {
   capableOnly: true,
   objectsOnly: true,
   isType: isTransferable,
-  box: (value: Transferable, _context: RevivableContext<any>): Transferable => value,
+  box: (value: Transferable, context: RevivableContext<any>): Transferable => {
+    if (isJsonOnlyTransport(context.transport)) {
+      const name = value.constructor?.name || 'Transferable'
+      throw new TypeError(`osra: ${name} is only supported on structured-clone transports`)
+    }
+    return value
+  },
   revive: (value: BoxedTransferable, _context: RevivableContext<any>): Transferable => value as unknown as Transferable,
 } as const
 

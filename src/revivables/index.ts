@@ -4,7 +4,7 @@ import type { MessageFields, Capable } from '../types.js'
 
 import { OSRA_BOX } from '../types.js'
 import { isRevivableBox } from './utils.js'
-import { isQuotedBox, isQuotingBoxes } from './quote.js'
+import { hasQuotedBoxFields, isQuotedBox, isQuotingBoxes } from './quote.js'
 import * as arrayBuffer from './array-buffer.js'
 import * as date from './date.js'
 import * as headers from './headers.js'
@@ -163,6 +163,25 @@ const modulesForPrimitives = (modules: readonly RevivableModule[]): readonly Rev
   return subset
 }
 
+const quoteBoxObject = <
+  TOut,
+  TModules extends readonly RevivableModule[]
+>(
+  value: Record<string, unknown>,
+  context: RevivableContext<TModules>,
+): TOut => {
+  const entries: [string, unknown][] = []
+  for (const [k, v] of Object.entries(value)) {
+    if (k === OSRA_BOX) continue
+    entries.push([k, recursiveBox(v as Capable, context)])
+  }
+  return {
+    [OSRA_BOX]: 'quoted',
+    box: value[OSRA_BOX],
+    value: Object.fromEntries(entries),
+  } as TOut
+}
+
 const boxDispatch = <
   T extends Capable,
   TModules extends readonly RevivableModule[]
@@ -182,6 +201,9 @@ const boxDispatch = <
   if (handledByModule) {
     return handledByModule.box(value, context) as ReturnCastType
   }
+  if (hasQuotedBoxFields(value)) {
+    return quoteBoxObject<ReturnCastType, TModules>(value as Record<string, unknown>, context)
+  }
   return descend<ReturnCastType>(value, v => recursiveBox(v, context))
 }
 
@@ -193,8 +215,10 @@ export const recursiveBox = <
   context: RevivableContext<TModules>
 ): DeepReplaceWithBox<T, TModules[number]> => {
   type ReturnCastType = DeepReplaceWithBox<T, TModules[number]>
-  if (isRevivableBox(value) || isQuotedBox(value)) {
-    if (!isQuotingBoxes()) return value as ReturnCastType
+  const revivableBox = isRevivableBox(value)
+  const quotedBox = !revivableBox && isQuotedBox(value)
+  if (revivableBox && !isQuotingBoxes()) return value as ReturnCastType
+  if (revivableBox || quotedBox) {
     if (boxPath.has(value)) {
       throw new TypeError('osra: cannot serialize a circular structure - break the cycle or send the container by reference')
     }
@@ -202,16 +226,7 @@ export const recursiveBox = <
     boxDepth++
     let failed = true
     try {
-      const entries: [string, unknown][] = []
-      for (const [k, v] of Object.entries(value)) {
-        if (k === OSRA_BOX) continue
-        entries.push([k, recursiveBox(v as Capable, context)])
-      }
-      const wrapped = {
-        [OSRA_BOX]: 'quoted',
-        box: value[OSRA_BOX],
-        value: Object.fromEntries(entries),
-      } as ReturnCastType
+      const wrapped = quoteBoxObject<ReturnCastType, TModules>(value as Record<string, unknown>, context)
       failed = false
       return wrapped
     } finally {

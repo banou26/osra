@@ -1,4 +1,5 @@
 import { transfer } from '../revivables/transfer.js'
+import { isQuotedBox } from '../revivables/quote.js'
 import { isRevivableBox } from '../revivables/utils.js'
 import { instanceOfAny, isSharedArrayBuffer, isTransferable } from './type-guards.js'
 
@@ -24,6 +25,32 @@ const isMustTransfer = (value: unknown): value is Transferable =>
 const isTransferBox = (value: unknown): value is { inner: unknown, degraded: boolean } =>
   isRevivableBox(value) && value.type === 'transfer'
 
+const unwrapQuotedTransferBox = (value: unknown): { inner: unknown, degraded: boolean } | undefined => {
+  const visited = new WeakSet<object>()
+  let current: unknown = value
+  while (isQuotedBox(current)) {
+    if (visited.has(current)) return undefined
+    visited.add(current)
+    const inner = current.value
+    if (current.box === 'revivable') {
+      if (
+        inner
+        && typeof inner === 'object'
+        && Object.hasOwn(inner, 'type')
+        && (inner as Record<string, unknown>).type === 'transfer'
+        && Object.hasOwn(inner, 'inner')
+        && Object.hasOwn(inner, 'degraded')
+        && typeof (inner as Record<string, unknown>).degraded === 'boolean'
+      ) {
+        return inner as { inner: unknown, degraded: boolean }
+      }
+      return undefined
+    }
+    current = inner
+  }
+  return undefined
+}
+
 /** Walk a boxed message and collect Transferables to move (rather than copy)
  *  on postMessage:
  *    1. Must-transfer types are always included.
@@ -43,6 +70,12 @@ export const getTransferableObjects = (value: unknown): Transferable[] => {
 
     if (isTransferBox(value)) {
       recurse(value.inner, inTransferBox || !value.degraded)
+      return
+    }
+
+    const quotedTransfer = unwrapQuotedTransferBox(value)
+    if (quotedTransfer) {
+      recurse(quotedTransfer.inner, inTransferBox || !quotedTransfer.degraded)
       return
     }
 

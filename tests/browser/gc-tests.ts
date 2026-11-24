@@ -342,7 +342,46 @@ export const identityRebindsOnTheContextThatForgot = async (_transport: Transpor
     .to.equal(true)
 }
 
+export const relayedNestedPortSurvivesGcAfterTransfer = async (transport: Transport) => {
+  const inner = new MessageChannel()
+  const nested = new MessageChannel()
+  let heldPort: MessagePort | undefined
+  let resolvedPing!: (msg: string) => void
+  const pingPromise = new Promise<string>(resolve => { resolvedPing = resolve })
+
+  const innerApi = {
+    takePort: async (port: MessagePort) => {
+      heldPort = port
+      port.addEventListener('message', event => resolvedPing(String((event as MessageEvent).data)), { once: true })
+      port.start()
+    },
+  }
+  expose(innerApi, { transport: inner.port1 })
+  inner.port1.start()
+
+  expose({ getPort: async () => inner.port2 }, { transport })
+  const outer = await expose<{ getPort: () => Promise<MessagePort> }>({}, { transport })
+  const remotePort = await outer.getPort()
+  const remoteInnerPromise = expose<typeof innerApi>({}, { transport: remotePort })
+  remotePort.start()
+  const remoteInner = await remoteInnerPromise
+
+  try {
+    await remoteInner.takePort(nested.port2)
+    await __osraForceGc()
+    nested.port1.start()
+    nested.port1.postMessage('survived-gc')
+    expect(await pingPromise).to.equal('survived-gc')
+  } finally {
+    heldPort?.close()
+    nested.port1.close()
+    remotePort.close()
+    inner.port1.close()
+  }
+}
+
 export const gc = {
+  relayedNestedPortSurvivesGcAfterTransfer,
   identityChainUnwindsFromTheOrigin,
   identityRebindsOnTheContextThatForgot,
   identityDropReleasesThePeersPin,

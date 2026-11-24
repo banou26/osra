@@ -15,6 +15,7 @@ import { OSRA_DEFAULT_KEY, OSRA_KEY } from '../types.js'
 import * as bidirectional from './bidirectional.js'
 import {
   isEmitTransport,
+  isJsonOnlyTransport,
   isReceiveTransport,
 } from '../utils/type-guards.js'
 import { createTypedEventTarget } from '../utils/typed-event-target.js'
@@ -123,7 +124,7 @@ export const startConnections = <
     const transferables = getTransferableObjects(envelope)
     sendOsraMessage(transport, envelope, targetOrigin, transferables)
     // after the post, not before: a local end whose peer was just handed over may close now
-    markPortsShipped(transferables)
+    markPortsShipped(transferables, !isJsonOnlyTransport(transport))
   }
 
   const sendMessage = (message: MessageVariant, targetOrigin?: string) => {

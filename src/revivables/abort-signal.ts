@@ -90,7 +90,7 @@ export const revive = <T extends BoxedAbortSignal, T2 extends RevivableContext>(
 
   port.addEventListener('message', ({ data: message }) => {
     if (message.type === 'abort') {
-      controller.abort(recursiveRevive(message.reason as Capable, context))
+      controller.abort(message.reason)
       revivedPortPins.delete(controller.signal)
       port.close()
     }

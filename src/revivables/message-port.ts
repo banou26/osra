@@ -304,10 +304,17 @@ export const box = <T, T2 extends RevivableContext = RevivableContext>(
   }
 
   function outgoingListener({ data }: MessageEvent<Capable>) {
+    let boxed: Capable
+    try {
+      boxed = boxUnlessPreBoxed(data, context)
+    } catch (error) {
+      globalThis.reportError?.(error)
+      return
+    }
     context.sendMessage({
       type: 'message',
       remoteUuid: context.remoteUuid,
-      data: boxUnlessPreBoxed(data, context),
+      data: boxed,
       portId,
       seq: nextOutSeq(context, portId),
     })
@@ -337,7 +344,7 @@ export const revive = <T extends Capable, T2 extends RevivableContext>(
 ): TypedMessagePort<T> => {
   if ('port' in value) {
     // Revived in the realm that made it, so it never travelled: release what its local end held
-    markPortsShipped([value.port as MessagePort])
+    markPortsShipped([value.port as MessagePort], false)
     if (value.autoBox) return createProtocolPort<T>(value.port as TypedMessagePort<Capable>, context)
     return value.port
   }
@@ -364,17 +371,26 @@ export const revive = <T extends Capable, T2 extends RevivableContext>(
 type Shipping = { shipped: boolean, pending: Array<() => void> }
 
 const unshippedRemotes = new WeakMap<object, Shipping>()
+const transferredRevivedPorts = new WeakMap<object, () => void>()
 
 /** Called after a post with its transfer list: replays what the local end of every channel whose
- *  peer was in it did while unshipped. A peer that never ships keeps its local end open, and its
- *  posts unsent, until garbage collection. */
-export const markPortsShipped = (transferables: readonly Transferable[]): void => {
+ *  peer was in it did while unshipped, and notifies revived ports whose external end moved across
+ *  a structured-clone boundary so GC of the neutered wrapper does not tear down the tunnel. */
+export const markPortsShipped = (transferables: readonly Transferable[], transferred = true): void => {
   for (const transferable of transferables) {
     const shipping = unshippedRemotes.get(transferable)
-    if (!shipping) continue
-    unshippedRemotes.delete(transferable)
-    shipping.shipped = true
-    for (const replay of shipping.pending.splice(0)) replay()
+    if (shipping) {
+      unshippedRemotes.delete(transferable)
+      shipping.shipped = true
+      for (const replay of shipping.pending.splice(0)) replay()
+    }
+    if (transferred) {
+      const onTransfer = transferredRevivedPorts.get(transferable)
+      if (onTransfer) {
+        transferredRevivedPorts.delete(transferable)
+        onTransfer()
+      }
+    }
   }
 }
 
@@ -468,6 +484,8 @@ const reviveViaPortId = <T extends Capable>(
   const internalPortRef = new WeakRef(internalPort)
 
   let cleanedUp = false
+  let transferred = false
+  let pinnedInternal: AnyPort<T> | undefined
   // node's MessagePort dispatches a close of its own once either end closes, after the one the
   // handler below dispatches, where a browser delivers none to a port whose local end is closed
   // (measured 2026-09-03, node 26.8.1 against the Playwright suite). The first listener on the port
@@ -481,8 +499,9 @@ const reviveViaPortId = <T extends Capable>(
   const performCleanup = () => {
     if (cleanedUp) return
     cleanedUp = true
+    const internal = pinnedInternal ?? internalPortRef.deref()
+    pinnedInternal = undefined
     tombstonePort(state, portId)
-    const internal = internalPortRef.deref()
     internal?.removeEventListener('message', internalPortListener as EventListener)
     internal?.close()
     unregisterGc?.()
@@ -497,11 +516,11 @@ const reviveViaPortId = <T extends Capable>(
       user?.close()
       return
     }
-    if (!userPortRef.deref()) {
+    if (!transferred && !userPortRef.deref()) {
       performCleanup()
       return
     }
-    const internal = internalPortRef.deref()
+    const internal = pinnedInternal ?? internalPortRef.deref()
     if (!internal) return
     reviveInbound<T>(
       message.data,
@@ -512,10 +531,18 @@ const reviveViaPortId = <T extends Capable>(
   }
 
   const internalPortListener = ({ data }: MessageEvent<T>) => {
+    let boxed: Capable
+    try {
+      boxed = boxUnlessPreBoxed(data as Capable, context)
+    } catch (error) {
+      userPortRef.deref()?.dispatchEvent(new Event('messageerror'))
+      globalThis.reportError?.(error)
+      return
+    }
     context.sendMessage({
       type: 'message',
       remoteUuid: context.remoteUuid,
-      data: boxUnlessPreBoxed(data as Capable, context),
+      data: boxed,
       portId,
       seq: nextOutSeq(context, portId),
     })
@@ -525,6 +552,20 @@ const reviveViaPortId = <T extends Capable>(
     sendClose(context, portId)
     performCleanup()
   })
+
+  if (!(userPort instanceof EventPort)) {
+    transferredRevivedPorts.set(userPort, () => {
+      transferred = true
+      // Deref rather than closing over internalPort so synthetic EventChannels (same scope) keep no strong ref via V8 closure context
+      pinnedInternal = internalPortRef.deref()
+      unregisterGc?.()
+    })
+    internalPort.addEventListener('close', () => {
+      if (!transferred || cleanedUp) return
+      sendClose(context, portId)
+      performCleanup()
+    }, { once: true })
+  }
 
   if (userPort instanceof EventPort) {
     userPort._onClose = () => {

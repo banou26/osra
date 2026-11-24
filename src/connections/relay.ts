@@ -1,7 +1,8 @@
 import type { Transport } from '../utils/transport.js'
 
 import { OSRA_DEFAULT_KEY } from '../types.js'
-import { isEmitTransport, isReceiveTransport } from '../utils/type-guards.js'
+import { isEmitTransport, isJsonOnlyTransport, isReceiveTransport } from '../utils/type-guards.js'
+import { markPortsShipped } from '../revivables/message-port.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import {
   registerOsraMessageListener,
@@ -50,7 +51,9 @@ export const relay = (
       origin: fromOrigin,
       unregisterSignal,
       listener: (message) => {
-        sendOsraMessage(to, message, toOrigin, getTransferableObjects(message))
+        const transferables = getTransferableObjects(message)
+        sendOsraMessage(to, message, toOrigin, transferables)
+        markPortsShipped(transferables, !isJsonOnlyTransport(to))
       },
     })
   }

@@ -8,6 +8,7 @@ import type {
 } from '../types.js'
 
 import { recursiveBox, recursiveRevive } from '../revivables/index.js'
+import { outsideTransfer } from '../revivables/transfer.js'
 import { isEmitTransport, isReceiveTransport } from '../utils/type-guards.js'
 import { runTeardown } from '../utils/teardown.js'
 
@@ -88,7 +89,7 @@ export const startBidirectionalConnection = <
   send({
     type: 'init',
     remoteUuid,
-    data: recursiveBox(value, revivableContext)
+    data: outsideTransfer(() => recursiveBox(value, revivableContext))
   })
 
   return {

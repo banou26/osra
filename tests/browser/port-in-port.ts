@@ -6,7 +6,7 @@ import { expect } from 'chai'
 
 import { expose, identity, transfer } from '../../src/index'
 import { defaultRevivableModules, onBoxWalkSettled, recursiveBox, recursiveRevive } from '../../src/revivables/index'
-import { withQuotedBoxes } from '../../src/revivables/quote'
+import { boxMessage } from '../../src/revivables/walk'
 import { OSRA_BOX } from '../../src/types'
 import { EventChannel, type EventPort } from '../../src/utils/event-channel'
 
@@ -533,7 +533,7 @@ export const throwingBoxMarkerRollsBackWalk = async () => {
     },
   )
 
-  expect(() => withQuotedBoxes(() => recursiveBox(evilBox as never, context))).to.throw('boom-marker')
+  expect(() => boxMessage(evilBox as never, context, { quoteAll: true })).to.throw('boom-marker')
   expect(reads).to.equal(3)
   expect(committed).to.equal(0)
   expect(rolledBack).to.equal(1)
@@ -674,9 +674,9 @@ export const threeLayerNestedQuotedBoxesRoundTrip = async () => {
   }
 
   const layer0 = recursiveBox(input, context) as unknown as Record<string, unknown>
-  const layer1 = withQuotedBoxes(() => recursiveBox(layer0 as never, context)) as unknown as Record<string, unknown>
-  const layer2 = withQuotedBoxes(() => recursiveBox(layer1 as never, context)) as unknown as Record<string, unknown>
-  const layer3 = withQuotedBoxes(() => recursiveBox(layer2 as never, context)) as unknown as Record<string, unknown>
+  const layer1 = boxMessage(layer0 as never, context, { quoteAll: true }) as unknown as Record<string, unknown>
+  const layer2 = boxMessage(layer1 as never, context, { quoteAll: true }) as unknown as Record<string, unknown>
+  const layer3 = boxMessage(layer2 as never, context, { quoteAll: true }) as unknown as Record<string, unknown>
 
   const whenL3 = layer3.when as Record<string, unknown>
   expect(whenL3[OSRA_BOX]).to.equal('quoted')
@@ -746,7 +746,7 @@ export const circularBoxUnderQuotingThrowsAndRollsBack = async () => {
   }
   circularRevivable.self = circularRevivable
 
-  expect(() => withQuotedBoxes(() => recursiveBox(circularRevivable as never, context))).to.throw(
+  expect(() => boxMessage(circularRevivable as never, context, { quoteAll: true })).to.throw(
     TypeError,
     /circular structure/,
   )
@@ -762,7 +762,7 @@ export const circularBoxUnderQuotingThrowsAndRollsBack = async () => {
   }
   ;(circularQuoted.value as Record<string, unknown>).self = circularQuoted
 
-  expect(() => withQuotedBoxes(() => recursiveBox(circularQuoted as never, context))).to.throw(
+  expect(() => boxMessage(circularQuoted as never, context, { quoteAll: true })).to.throw(
     TypeError,
     /circular structure/,
   )
@@ -1016,4 +1016,100 @@ export const clonableAndTransferableRejectOnJsonAndRawPort = async () => {
     remotePort.close()
     channel.port1.close()
   }
+}
+
+export const nestedConnectionsMoveTransfersThroughThreeQuoteLayers = async () => {
+  // Four nested connections: each inner one runs over an EventPort the next outer one relays, so the
+  // innermost transfer box reaches the outer MessageChannel post under three quote layers.
+  const api = { take: async (buf: ArrayBuffer) => Array.from(new Uint8Array(buf)) }
+  const outer = new MessageChannel()
+  const inner = Array.from({ length: 3 }, () => new EventChannel<unknown, unknown>())
+  expose(api, { transport: makeEventPortTransport(inner[2]!.port1) })
+  for (let i = 2; i > 0; i--) {
+    const next = inner[i]!.port2
+    expose({ getPort: async () => next as unknown as MessagePort }, { transport: makeEventPortTransport(inner[i - 1]!.port1) })
+  }
+  expose({ getPort: async () => inner[0]!.port2 as unknown as MessagePort }, { transport: outer.port1 })
+
+  const clientPorts: EventPort<unknown>[] = []
+  try {
+    let transport: Transport = outer.port2
+    for (let level = 0; level < 3; level++) {
+      const client = await makeTimeout(
+        expose<{ getPort: () => Promise<MessagePort> }>({}, { transport }),
+        `nested level ${level}`,
+      )
+      const port = (await makeTimeout(client.getPort(), `nested level ${level} getPort`)) as unknown as EventPort<unknown>
+      clientPorts.push(port)
+      transport = makeEventPortTransport(port)
+    }
+    const remote = await makeTimeout(expose<typeof api>({}, { transport }), 'nested innermost')
+
+    const buf = new Uint8Array([1, 2, 3, 4]).buffer
+    expect(await makeTimeout(remote.take(transfer(buf)), 'nested transfer')).to.deep.equal([1, 2, 3, 4])
+    expect(buf.byteLength).to.equal(0)
+
+    const copied = new Uint8Array([5, 6]).buffer
+    expect(await makeTimeout(remote.take(copied), 'nested copy')).to.deep.equal([5, 6])
+    expect(copied.byteLength).to.equal(2)
+  } finally {
+    for (const port of clientPorts) port.close()
+    for (const channel of inner) channel.port1.close()
+    outer.port1.close()
+    outer.port2.close()
+  }
+}
+
+const fakeDate = () => ({ [OSRA_BOX]: 'revivable', type: 'date', ISOString: '1970-01-01T00:00:00.000Z' })
+const fakeQuoted = () => ({ [OSRA_BOX]: 'quoted', box: 'revivable', value: { type: 'date', ISOString: '1970-01-01T00:00:00.000Z' } })
+
+export const userRevivableShapedObjectsPreservedAtEveryEntryPoint = async (transport: Transport) => {
+  const payload = () => ({ date: fakeDate(), quoted: fakeQuoted(), list: [fakeDate()] })
+  let receivedArg: unknown
+  const api = {
+    initValue: payload(),
+    echo: async (value: unknown) => {
+      receivedArg = value
+      return value
+    },
+    later: async () => ({ result: Promise.resolve(payload()) }),
+    watch: async (signal: AbortSignal) =>
+      new Promise<unknown>(resolve => signal.addEventListener('abort', () => resolve(signal.reason), { once: true })),
+  }
+  expose(api, { transport })
+  const remote = await makeTimeout(expose<typeof api>({}, { transport }), 'entry points expose')
+
+  expect(remote.initValue, 'init').to.deep.equal(payload())
+
+  const echoed = await makeTimeout(remote.echo(payload()), 'echo')
+  expect(receivedArg, 'function argument').to.deep.equal(payload())
+  expect(echoed, 'function result').to.deep.equal(payload())
+
+  const { result } = await makeTimeout(remote.later(), 'later')
+  expect(await makeTimeout(result, 'later result'), 'protocol port').to.deep.equal(payload())
+
+  const controller = new AbortController()
+  const reason = remote.watch(controller.signal)
+  await new Promise(resolve => setTimeout(resolve, 10))
+  controller.abort(payload())
+  expect(await makeTimeout(reason, 'abort reason'), 'abort reason').to.deep.equal(payload())
+}
+
+export const boxingAnOsraBoxTwiceLeavesItUntouched = async () => {
+  const context: RevivableContext<readonly RevivableModule[]> = {
+    transport: { isJson: true, emit: () => {}, receive: () => {} },
+    remoteUuid: '00000000-0000-0000-0000-000000000000',
+    sendMessage: () => {},
+    revivableModules: defaultRevivableModules,
+    eventTarget: new EventTarget() as RevivableContext['eventTarget'],
+  }
+  const once = recursiveBox({ when: new Date(0) }, context) as unknown as { when: object }
+  const twice = recursiveBox(once as never, context) as unknown as { when: object }
+  expect(twice.when).to.equal(once.when)
+  const revived = recursiveRevive(twice as never, context) as unknown as { when: Date }
+  expect(revived.when).to.be.instanceOf(Date)
+
+  const foreign = recursiveBox({ when: fakeDate() } as never, context) as unknown as { when: Record<string, unknown> }
+  expect(foreign.when[OSRA_BOX]).to.equal('quoted')
+  expect(recursiveRevive(foreign as never, context)).to.deep.equal({ when: fakeDate() })
 }

@@ -380,7 +380,71 @@ export const relayedNestedPortSurvivesGcAfterTransfer = async (transport: Transp
   }
 }
 
+const runtimeDispatchesPortClose = async () => {
+  const { port1, port2 } = new MessageChannel()
+  const fired = new Promise<boolean>(resolve => {
+    port1.addEventListener('close', () => resolve(true), { once: true })
+    setTimeout(() => resolve(false), 100)
+  })
+  port1.start()
+  port2.close()
+  const result = await fired
+  port1.close()
+  return result
+}
+
+/** Where the runtime dispatches MessagePort close, closing a revived port reaches the side that sent
+ *  it right away, without waiting for the port to be collected. A no-op on engines without the event. */
+export const closingARevivedPortClosesTheSenderSide = async (transport: Transport) => {
+  if (!(await runtimeDispatchesPortClose())) return
+  const inner = new MessageChannel()
+  const senderClosed = new Promise<'closed'>(resolve => {
+    inner.port1.addEventListener('close', () => resolve('closed'), { once: true })
+  })
+  inner.port1.start()
+  expose({ getPort: async () => inner.port2 }, { transport })
+  const remote = await expose<{ getPort: () => Promise<MessagePort> }>({}, { transport })
+  const port = await remote.getPort()
+  port.start()
+  try {
+    port.close()
+    const settled = await Promise.race([senderClosed, new Promise<'open'>(r => setTimeout(() => r('open'), 500))])
+    expect(settled).to.equal('closed')
+  } finally {
+    inner.port1.close()
+  }
+}
+
+/** A relayed port the caller received and dropped closes the side that sent it once it is collected.
+ *  Only a JSON transport relays a MessagePort; a structured one transfers it outright. */
+export const droppedRelayedPortClosesTheSenderSide = async (transport: Transport) => {
+  if (!('isJson' in transport && transport.isJson === true)) return
+  const inner = new MessageChannel()
+  let senderCloses = 0
+  inner.port2.addEventListener('close', () => { senderCloses++ })
+  expose({ getPort: async () => inner.port2 }, { transport })
+  const remote = await expose<{ getPort: () => Promise<MessagePort> }>({}, { transport })
+  // taken in a frame that ends, so the suspended test frame cannot keep the awaited port alive
+  const portRef = await (async () => new WeakRef(await remote.getPort()))()
+  // control: Firefox 146 and node keep an entangled port alive while its peer lives, so nothing can collect it there
+  const control = (() => {
+    const { port1, port2 } = new MessageChannel()
+    return { port1, port2Ref: new WeakRef(port2) }
+  })()
+  try {
+    await __osraForceGc()
+    if (control.port2Ref.deref() !== undefined) return
+    expect(portRef.deref() === undefined, 'revived port should be collected after drop').to.equal(true)
+    await new Promise(r => setTimeout(r, 50))
+    expect(senderCloses).to.equal(1)
+  } finally {
+    inner.port1.close()
+  }
+}
+
 export const gc = {
+  droppedRelayedPortClosesTheSenderSide,
+  closingARevivedPortClosesTheSenderSide,
   relayedNestedPortSurvivesGcAfterTransfer,
   identityChainUnwindsFromTheOrigin,
   identityRebindsOnTheContextThatForgot,

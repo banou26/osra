@@ -25,30 +25,35 @@ const isMustTransfer = (value: unknown): value is Transferable =>
 const isTransferBox = (value: unknown): value is { inner: unknown, degraded: boolean } =>
   isRevivableBox(value) && value.type === 'transfer'
 
+type QuoteLayer = { box: unknown, value: unknown }
+
+// A quoted box nested inside another loses its marker key, so every layer under the outer one is a bare `{ box, value }`.
+const isInnerQuoteLayer = (value: unknown): value is QuoteLayer =>
+  !!value
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && Object.keys(value).length === 2
+  && Object.hasOwn(value, 'box')
+  && Object.hasOwn(value, 'value')
+
+const isTransferRecord = (value: unknown): value is { inner: unknown, degraded: boolean } =>
+  !!value
+  && typeof value === 'object'
+  && Object.hasOwn(value, 'type')
+  && (value as Record<string, unknown>).type === 'transfer'
+  && Object.hasOwn(value, 'inner')
+  && typeof (value as Record<string, unknown>).degraded === 'boolean'
+
 const unwrapQuotedTransferBox = (value: unknown): { inner: unknown, degraded: boolean } | undefined => {
+  if (!isQuotedBox(value)) return undefined
   const visited = new WeakSet<object>()
-  let current: unknown = value
-  while (isQuotedBox(current)) {
-    if (visited.has(current)) return undefined
-    visited.add(current)
-    const inner = current.value
-    if (current.box === 'revivable') {
-      if (
-        inner
-        && typeof inner === 'object'
-        && Object.hasOwn(inner, 'type')
-        && (inner as Record<string, unknown>).type === 'transfer'
-        && Object.hasOwn(inner, 'inner')
-        && Object.hasOwn(inner, 'degraded')
-        && typeof (inner as Record<string, unknown>).degraded === 'boolean'
-      ) {
-        return inner as { inner: unknown, degraded: boolean }
-      }
-      return undefined
-    }
-    current = inner
+  let layer: QuoteLayer = value
+  while (layer.box === 'quoted') {
+    if (visited.has(layer) || !isInnerQuoteLayer(layer.value)) return undefined
+    visited.add(layer)
+    layer = layer.value
   }
-  return undefined
+  return layer.box === 'revivable' && isTransferRecord(layer.value) ? layer.value : undefined
 }
 
 /** Walk a boxed message and collect Transferables to move (rather than copy)

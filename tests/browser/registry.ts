@@ -38,6 +38,7 @@ export const transportTests: Readonly<Record<string, Readonly<Record<string, (tr
     osraRpcOverArgumentRelayedPort: portInPortTests.osraRpcOverArgumentRelayedPort,
     userBoxShapedObjectsPreserved: portInPortTests.userBoxShapedObjectsPreserved,
     abortSignalDeferredBoxShapedReasonNoDoubleRevive: portInPortTests.abortSignalDeferredBoxShapedReasonNoDoubleRevive,
+    userRevivableShapedObjectsPreservedAtEveryEntryPoint: portInPortTests.userRevivableShapedObjectsPreservedAtEveryEntryPoint,
   },
   CustomRevivables: {
     userPoint: customRevivables.userPoint,
@@ -76,6 +77,8 @@ export const standaloneTests: Readonly<Record<string, Readonly<Record<string, ()
     relayedPortPreservesUserBoxShapedObjects: portInPortTests.relayedPortPreservesUserBoxShapedObjects,
     quotedTransferOverEventPortThroughCloneChannel: portInPortTests.quotedTransferOverEventPortThroughCloneChannel,
     clonableAndTransferableRejectOnJsonAndRawPort: portInPortTests.clonableAndTransferableRejectOnJsonAndRawPort,
+    nestedConnectionsMoveTransfersThroughThreeQuoteLayers: portInPortTests.nestedConnectionsMoveTransfersThroughThreeQuoteLayers,
+    boxingAnOsraBoxTwiceLeavesItUntouched: portInPortTests.boxingAnOsraBoxTwiceLeavesItUntouched,
   },
   Relay: fns(relayTests),
   Reorder: fns(reorderTests),

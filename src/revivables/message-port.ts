@@ -8,9 +8,8 @@ import type {
 } from '../utils/capable-check.js'
 
 import { BoxBase } from './utils.js'
-import { outsideTransfer } from './transfer.js'
-import { withQuotedBoxes } from './quote.js'
-import { recursiveBox, recursiveRevive } from './index.js'
+import { recursiveRevive } from './index.js'
+import { boxMessage } from './walk.js'
 import { getTransferableObjects } from '../utils/transferable.js'
 import { isJsonOnlyTransport } from '../utils/type-guards.js'
 import { EventChannel, EventPort } from '../utils/event-channel.js'
@@ -184,8 +183,9 @@ const sendClose = (context: RevivableContext, portId: Uuid) => {
   } catch {}
 }
 
-const postRevived = <T>(port: AnyPort<T>, data: T, synthetic: boolean) => {
-  if (synthetic) { port.postMessage(data); return }
+// An EventPort hands the value over by reference in this realm, so nothing in it was transferred.
+const postRevived = <T>(port: AnyPort<T>, data: T) => {
+  if (port instanceof EventPort) { port.postMessage(data); return }
   const transferables = getTransferableObjects(data)
   port.postMessage(data, transferables)
   markPortsShipped(transferables)
@@ -254,9 +254,7 @@ export const postPreBoxed = (
 const boxUnlessPreBoxed = <TContext extends RevivableContext>(data: Capable, context: TContext): Capable =>
   isMarkable(data) && preBoxedPayloads.delete(data)
     ? data
-    // outsideTransfer: liveRef.start() can flush queued messages synchronously while a transfer()
-    // extent is on the stack - queued values are not part of it
-    : outsideTransfer(() => withQuotedBoxes(() => recursiveBox(data, context))) as Capable
+    : boxMessage(data, context, { quoteAll: true })
 
 export const box = <T, T2 extends RevivableContext = RevivableContext>(
   value: StructurableTransferablePort<T>,
@@ -300,7 +298,7 @@ export const box = <T, T2 extends RevivableContext = RevivableContext>(
       return
     }
     // the message would have landed on the end the user holds, which a real MessagePort cannot reach from here
-    reviveInbound<T>(message.data, context, revived => postRevived(liveRef, revived, false), () => {})
+    reviveInbound<T>(message.data, context, revived => postRevived(liveRef, revived), () => {})
   }
 
   function outgoingListener({ data }: MessageEvent<Capable>) {
@@ -420,9 +418,7 @@ const createProtocolPort = <T>(
   port.addEventListener('messageerror', onMessageError as EventListener)
   port.addEventListener('close', onClose as EventListener)
   target.postMessage = (data: T, opt?: Transferable[] | StructuredSerializeOptions) => {
-    // outsideTransfer: a fresh walk - move semantics come from wrappers in `data` (e.g.
-    // forceTransfer-marked chunks), never from an extent that happens to be on the stack
-    const boxed = outsideTransfer(() => recursiveBox(data as Capable, ctx))
+    const boxed = boxMessage(data as Capable, ctx)
     const transferables = getTransferableObjects(boxed)
     const extra = Array.isArray(opt) ? opt : []
     const transferList = extra.length ? [...transferables, ...extra] : transferables
@@ -525,7 +521,7 @@ const reviveViaPortId = <T extends Capable>(
     reviveInbound<T>(
       message.data,
       context,
-      revived => postRevived(internal, revived, synthetic),
+      revived => postRevived(internal, revived),
       () => userPortRef.deref()?.dispatchEvent(new Event('messageerror')),
     )
   }
@@ -560,8 +556,10 @@ const reviveViaPortId = <T extends Capable>(
       pinnedInternal = internalPortRef.deref()
       unregisterGc?.()
     })
+    // Only runtimes that dispatch MessagePort close reach this (node; not Chromium 145 or Firefox 146, measured
+    // 2026-11-26). Without it a transferred end lives until the peer closes or the connection ends.
     internalPort.addEventListener('close', () => {
-      if (!transferred || cleanedUp) return
+      if (cleanedUp) return
       sendClose(context, portId)
       performCleanup()
     }, { once: true })

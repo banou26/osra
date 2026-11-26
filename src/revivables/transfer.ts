@@ -2,7 +2,7 @@ import type { Capable } from '../types.js'
 import type { BoxBase as BoxBaseType, RevivableContext, UnderlyingType } from './utils.js'
 
 import { BoxBase } from './utils.js'
-import { outsideQuoting } from './quote.js'
+import { currentWalk } from './walk.js'
 import { instanceOfAny, isJsonOnlyTransport } from '../utils/type-guards.js'
 import { recursiveBox, recursiveRevive } from './index.js'
 
@@ -60,13 +60,9 @@ export const transfer = <T>(value: T): T =>
     : value
   ) as T
 
-// Boxing is fully synchronous (same invariant boxPath in index.ts relies on), so a
-// balanced enter/exit counter is enough to tell "currently inside a transfer() wrapper".
-let transferDepth = 0
-
 /** Whether boxing is happening inside a transfer() wrapper's extent. Streams read
  *  this at box time so transfer(stream) propagates move semantics to their chunks. */
-export const isInTransfer = () => transferDepth > 0
+export const isInTransfer = () => (currentWalk()?.transferDepth ?? 0) > 0
 
 /** Internal chunk marker: unlike the public transfer(), wraps containers too, so
  *  transferables nested anywhere inside a chunk move. Not part of the public API. */
@@ -76,22 +72,6 @@ export const forceTransfer = <T>(value: T): T =>
     : value
   ) as T
 
-/** Runs fn with the ambient transfer extent suspended. Boxing at independent walk
- *  entry points (protocol ports, revived-function calls) can fire synchronously
- *  inside someone else's transfer() extent - an EventPort.start() flush during
- *  boxing, or user code (a getter) calling a revived function mid-walk. Those
- *  values are not part of the wrapper's graph, so their move semantics must come
- *  from a wrapper in their own data, never from the ambient counter. */
-export const outsideTransfer = <T>(fn: () => T): T => {
-  const saved = transferDepth
-  transferDepth = 0
-  try {
-    return outsideQuoting(fn)
-  } finally {
-    transferDepth = saved
-  }
-}
-
 export const isType = (value: unknown): value is TransferWrapper =>
   isTransferWrapper(value)
 
@@ -99,7 +79,8 @@ export const box = <T extends Capable, TContext extends RevivableContext>(
   wrapper: TransferWrapper<T>,
   context: TContext,
 ): BoxedTransfer<T> => {
-  transferDepth++
+  const walk = currentWalk()
+  if (walk) walk.transferDepth++
   try {
     // `degraded` tells the send-time walker in getTransferableObjects to skip the transfer-list entry
     return {
@@ -109,7 +90,7 @@ export const box = <T extends Capable, TContext extends RevivableContext>(
       degraded: isJsonOnlyTransport(context.transport),
     } as unknown as BoxedTransfer<T>
   } finally {
-    transferDepth--
+    if (walk) walk.transferDepth--
   }
 }
 

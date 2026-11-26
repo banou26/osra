@@ -24,29 +24,3 @@ export const isQuotedBox = (value: unknown): value is QuotedBox => {
   const innerProto = Object.getPrototypeOf(value.value)
   return innerProto === Object.prototype || innerProto === null
 }
-
-// Depth rather than a flag so nested withQuotedBoxes() restores cleanly, and outsideQuoting()
-// can suspend it at independent walk entry points (Protocol ports, revived function calls) that
-// already expect osra's box pass to leave existing boxes untouched.
-let quoteBoxesDepth = 0
-
-export const isQuotingBoxes = (): boolean => quoteBoxesDepth > 0
-
-export const withQuotedBoxes = <T>(fn: () => T): T => {
-  quoteBoxesDepth++
-  try {
-    return fn()
-  } finally {
-    quoteBoxesDepth--
-  }
-}
-
-export const outsideQuoting = <T>(fn: () => T): T => {
-  const saved = quoteBoxesDepth
-  quoteBoxesDepth = 0
-  try {
-    return fn()
-  } finally {
-    quoteBoxesDepth = saved
-  }
-}

@@ -2,8 +2,7 @@ import type { Capable } from '../types.js'
 import type { UnderlyingType, RevivableContext, BoxBase as BoxBaseType } from './utils.js'
 
 import { BoxBase } from './utils.js'
-import { outsideTransfer } from './transfer.js'
-import { recursiveBox } from './index.js'
+import { boxMessage } from './walk.js'
 import { EventChannel, type EventPort } from '../utils/event-channel.js'
 import { isTornDown, onTeardown } from '../utils/teardown.js'
 import { box as boxMessagePort, postPreBoxed, revive as reviveMessagePort, BoxedMessagePort } from './message-port.js'
@@ -75,9 +74,9 @@ export const box = <T extends (...args: any[]) => any, T2 extends RevivableConte
       }
       const boxedResult = (() => {
         try {
-          return recursiveBox(message as Capable, context)
+          return boxMessage(message as Capable, context)
         } catch (error) {
-          return recursiveBox({ type: 'throw', error: error as Capable } as Capable, context)
+          return boxMessage({ type: 'throw', error: error as Capable } as Capable, context)
         }
       })()
       // No transfer list: the port on this side is always an EventPort (function boxes its channel with
@@ -138,10 +137,7 @@ export const revive = <T extends BoxedFunction, T2 extends RevivableContext>(
       }, { once: true })
       returnLocal.start()
 
-      // outsideTransfer: user code can call a revived function synchronously from inside a
-      // transfer() extent (e.g. a getter evaluated while boxing a transferred chunk); these
-      // args are not part of that wrapper's graph
-      const callContext = outsideTransfer(() => recursiveBox([returnRemote, args] as unknown as Capable, context))
+      const callContext = boxMessage([returnRemote, args] as unknown as Capable, context)
       postPreBoxed(port, callContext as Capable)
     })) as T[UnderlyingType]
 }

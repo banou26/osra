@@ -125,7 +125,8 @@ Three things clean up after themselves.
 **Connections.** Closing runs a teardown registry: pending calls reject, ports close, streams cancel, caches clear.
 
 **Ports.** Closing one tells the peer, which closes its end.\
-A `FinalizationRegistry` is the backstop for a port nobody bothered to close, with the cleanup built in its own scope so it cannot accidentally hold a reference to the thing it is waiting to see collected.
+A `FinalizationRegistry` is the backstop for a port nobody bothered to close, with the cleanup built in its own scope so it cannot accidentally hold a reference to the thing it is waiting to see collected.\
+A relayed port you send on through osra keeps its tunnel until either end closes or the connection ends. Send it through osra rather than a raw `postMessage`: osra cannot see a raw transfer, so the collected local wrapper closes the tunnel. Firefox keeps an open port alive while its peer is, so there only a close or the connection's end releases it.
 
 **Identities and proxies.** When a value sent with `identity()` is collected, its owner sends `identity-dispose` so the peer drops its cached copy, and a peer that had passed that value further along tells its own peer in turn, so a chain of contexts unwinds from the origin outward.\
 When an `EventTarget` proxy is collected, one call removes every listener it registered on the source.

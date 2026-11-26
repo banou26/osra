@@ -4,7 +4,8 @@ import type { MessageFields, Capable } from '../types.js'
 
 import { OSRA_BOX } from '../types.js'
 import { isRevivableBox } from './utils.js'
-import { hasQuotedBoxFields, isQuotedBox, isQuotingBoxes } from './quote.js'
+import { hasQuotedBoxFields, isQuotedBox } from './quote.js'
+import { boxMessage, currentWalk } from './walk.js'
 import * as arrayBuffer from './array-buffer.js'
 import * as date from './date.js'
 import * as headers from './headers.js'
@@ -32,6 +33,7 @@ import { nonFiniteNumber, undefinedValue } from './json-primitives.js'
 
 export { identity } from './identity.js'
 export { transfer } from './transfer.js'
+export { onBoxWalkSettled } from './walk.js'
 
 export * from './utils.js'
 
@@ -115,37 +117,17 @@ const descend = <TOut>(value: unknown, transform: (v: Capable) => unknown): TOut
   return value as TOut
 }
 
-// Box/revive are fully synchronous, so a module-global set with balanced enter/exit is safe; tracking the *path* (not all visited values) keeps sibling aliasing working.
-const boxPath = new WeakSet<object>()
+// Revive is fully synchronous, so a module-global set with balanced enter/exit is safe; tracking the *path* (not all visited values) keeps sibling aliasing working.
 const revivePath = new WeakSet<object>()
 
-// Depth of the current top-level box walk, and the side effects waiting on it to finish. Same
-// synchronous-walk invariant as boxPath.
-let boxDepth = 0
-let pendingWalkEffects: Array<{ commit: () => void, rollback: () => void }> = []
+// Marks boxes osra's own modules returned, so they pass through a later walk untouched (boxing a field
+// twice stays safe) while any other object shaped like a box is quoted and arrives as it was sent. A
+// non-enumerable symbol rather than a WeakSet: structured clone and JSON drop it, and a WeakSet's table
+// stayed grown after 100k boxes, failing the 1 MB heap gate (measured 2026-11-26, Chromium 145).
+const PRODUCED_BOX: unique symbol = Symbol('osra.producedBox')
 
-/** Hold a side effect until the whole box walk this value belongs to has finished, and undo it if the
- *  walk throws. A module that records state the PEER will be told about ("it knows this id now") must
- *  not keep that record when a later sibling breaks the message it was recorded for: nothing ships,
- *  and every later send would then reference something the peer never received. Outside a walk the
- *  effect is already settled, so `commit` runs immediately. */
-export const onBoxWalkSettled = (commit: () => void, rollback: () => void): void => {
-  if (boxDepth === 0) {
-    commit()
-    return
-  }
-  pendingWalkEffects.push({ commit, rollback })
-}
-
-const settleBoxWalk = (failed: boolean) => {
-  const effects = pendingWalkEffects
-  pendingWalkEffects = []
-  for (const effect of effects) {
-    try {
-      if (failed) effect.rollback()
-      else effect.commit()
-    } catch { /* one module's bookkeeping must not break another's */ }
-  }
+const markProduced = (box: object): void => {
+  if (Object.isExtensible(box)) Object.defineProperty(box, PRODUCED_BOX, { value: true })
 }
 
 const isTrackable = (value: unknown): value is object =>
@@ -199,7 +181,9 @@ const boxDispatch = <
     module => module.type !== skipType && module.isType(value)
   )
   if (handledByModule) {
-    return handledByModule.box(value, context) as ReturnCastType
+    const boxed = handledByModule.box(value, context)
+    if (isRevivableBox(boxed)) markProduced(boxed)
+    return boxed as ReturnCastType
   }
   if (hasQuotedBoxFields(value)) {
     return quoteBoxObject<ReturnCastType, TModules>(value as Record<string, unknown>, context)
@@ -215,43 +199,24 @@ export const recursiveBox = <
   context: RevivableContext<TModules>
 ): DeepReplaceWithBox<T, TModules[number]> => {
   type ReturnCastType = DeepReplaceWithBox<T, TModules[number]>
+  const walk = currentWalk()
+  if (!walk) return boxMessage(value, context) as ReturnCastType
   const revivableBox = isRevivableBox(value)
-  const quotedBox = !revivableBox && isQuotedBox(value)
-  if (revivableBox && !isQuotingBoxes()) return value as ReturnCastType
-  if (revivableBox || quotedBox) {
-    if (boxPath.has(value)) {
-      throw new TypeError('osra: cannot serialize a circular structure - break the cycle or send the container by reference')
-    }
-    boxPath.add(value)
-    boxDepth++
-    let failed = true
-    try {
-      const wrapped = quoteBoxObject<ReturnCastType, TModules>(value as Record<string, unknown>, context)
-      failed = false
-      return wrapped
-    } finally {
-      boxPath.delete(value)
-      boxDepth--
-      if (boxDepth === 0) settleBoxWalk(failed)
-    }
-  }
+  if (revivableBox && !walk.quoteAll && Object.hasOwn(value, PRODUCED_BOX)) return value as ReturnCastType
+  const quote = revivableBox || isQuotedBox(value)
   const track = isTrackable(value)
   if (track) {
-    if (boxPath.has(value)) {
+    if (walk.path.has(value)) {
       throw new TypeError('osra: cannot serialize a circular structure - break the cycle or send the container by reference')
     }
-    boxPath.add(value)
+    walk.path.add(value)
   }
-  boxDepth++
-  let failed = true
   try {
-    const boxed = boxDispatch(value, context)
-    failed = false
-    return boxed
+    return quote
+      ? quoteBoxObject<ReturnCastType, TModules>(value as Record<string, unknown>, context)
+      : boxDispatch(value, context)
   } finally {
-    if (track) boxPath.delete(value)
-    boxDepth--
-    if (boxDepth === 0) settleBoxWalk(failed)
+    if (track) walk.path.delete(value)
   }
 }
 

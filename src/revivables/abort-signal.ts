@@ -41,7 +41,7 @@ export const box = <T extends AbortSignal, T2 extends RevivableContext>(
   value: T,
   context: T2,
 ): BoxedAbortSignal => {
-  // Must box the reason here - recursiveBox short-circuits on OSRA_BOX without descending in.
+  // The reason rides inside this box, which the walker passes through without descending into, so it is boxed here.
   if (value.aborted) {
     return {
       ...BoxBase,

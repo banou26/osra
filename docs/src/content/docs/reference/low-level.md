@@ -183,7 +183,8 @@ Most of them probe `globalThis` before touching a constructor, and `instanceOfAn
 
 A few behaviors worth knowing about:
 
-- A box osra produced passes through `recursiveBox` untouched, so boxing a field twice is safe. Any other object shaped like a box is sent as data and arrives exactly as it was.
+- A box a module returned through the walker passes through `recursiveBox` untouched, so boxing a field twice is safe. Any other object shaped like a box is sent as data and arrives exactly as it was. That includes a box you get by calling a module's `box` yourself, and a frozen box: neither carries the mark the walker adds, so both are quoted.
+- The mark stays in the realm that boxed the value. On the wire, data shaped exactly like a quoted transfer box (`box: 'revivable'` around `{ type: 'transfer', inner, degraded: false }`) looks the same as a real one, so the buffers under its `inner` are moved rather than copied.
 - Both walkers throw a `TypeError` on circular structures, which is why `expose()`'s promise can reject with one.
 - For binary fields there is `boxBuffer(buffer, context)` and `reviveBuffer(boxed)`, the same pair osra's own modules use: a raw `ArrayBuffer` on structured transports, base64 on JSON ones.
 - `boxClaimedValue(value, context, yourType)` is for the rarer module that claims a bare value rather than a wrapper around one, the way `identity()` marks a reference in place. It boxes the value through every other module and walks its children as usual, skipping your own module and the cycle guard the walker already holds for that value, both of which `recursiveBox` on the same value would trip.
